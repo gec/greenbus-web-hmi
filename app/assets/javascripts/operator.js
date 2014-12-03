@@ -93,7 +93,7 @@ define([
       config(['$routeProvider', function($routeProvider) {
         $routeProvider.
           when('/view1', {templateUrl: '/partials/view1.html', controller: 'View1Control'}).
-//          when('/logout', {templateUrl: '/partials/login.html', controller: 'LogoutControl'}).
+          when('/logout', {templateUrl: '/partials/login.html', controller: 'LogoutController'}).
 //          when('/measurements', {templateUrl: '/partials/measurements.html', controller: 'MeasurementControl'}).
 //          when('/measurements/:navId', {templateUrl: '/partials/measurements.html', controller: 'MeasurementControl'}).
 //          when('/chart', {templateUrl: '/partials/chart.html', controller: 'ChartControl'}).

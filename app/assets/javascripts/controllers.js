@@ -24,8 +24,8 @@ define([
 
 return angular.module( 'controllers', ['gec.views'] )
 
-.controller( 'View1Control', [ function() {
-
+.controller( 'View1Control', [ '$scope', function( $scope) {
+    $scope.hey = 'hey'
 }])
 
 .controller( 'MenuControl', ['$rootScope', '$scope', function( $rootScope, $scope) {

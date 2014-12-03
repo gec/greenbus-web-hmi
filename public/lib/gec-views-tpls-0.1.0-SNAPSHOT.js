@@ -1,12 +1,12 @@
 /*
- * coral-views
- * https://github.com/gec/coral-views
+ * greenbus-web-views
+ * https://github.com/gec/greenbus-web-views
 
  * Version: 0.1.0-SNAPSHOT - 2014-12-03
- * License: MIT
+ * License: Apache Version 2.0
  */
 angular.module("gec.views", ["gec.views.tpls", "gec.views.authentication","gec.views.event","gec.views.measurement","gec.views.navigation","gec.views.rest","gec.views.subscription"]);
-angular.module("gec.views.tpls", ["template/authentication/loginmodal.html","template/event/alarms.html","template/event/events.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
+angular.module("gec.views.tpls", ["template/event/alarms.html","template/event/events.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -322,6 +322,10 @@ angular.module('gec.views.authentication', ['ngCookies', 'ui.bootstrap', 'ui.key
     $scope.openDialog = openDialog
     openDialog()
 
+  }] ).
+
+  controller('LogoutController', ['$scope', 'authentication', function($scope, authentication) {
+    authentication.logout();
   }]);
 
 /**
@@ -1776,38 +1780,6 @@ angular.module('gec.views.subscription', ['gec.views.authentication']).
 
   }]);
 
-angular.module("template/authentication/loginmodal.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/authentication/loginmodal.html",
-    "<div class=\"modal-header\">\n" +
-    "    <h3>Login</h3>\n" +
-    "</div>\n" +
-    "<div class=\"modal-body\">\n" +
-    "\n" +
-    "    <form class=\"form-horizontal\" role=\"form\">\n" +
-    "        <div class=\"form-group\">\n" +
-    "            <label for=\"userName\" class=\"col-sm-3 control-label\">User Name</label>\n" +
-    "            <div class=\"col-sm-9\">\n" +
-    "                <input id=\"userName\" type=\"text\" class=\"form-control\" ng-model=\"userName\" placeholder=\"user name\" autofocus=\"autofocus\">\n" +
-    "            </div>\n" +
-    "        </div>\n" +
-    "        <div class=\"form-group\">\n" +
-    "            <label for=\"password\" class=\"col-sm-3 control-label\">Password</label>\n" +
-    "            <div class=\"col-sm-9\">\n" +
-    "                <input id=\"password\" type=\"password\" class=\"form-control\" ng-model=\"password\" placeholder=\"password\" ui-keypress=\"{enter: 'login()'}\">\n" +
-    "            </div>\n" +
-    "        </div>\n" +
-    "    </form>\n" +
-    "\n" +
-    "</div>\n" +
-    "<div class=\"modal-footer\">\n" +
-    "    <div class=\"alert alert-danger\" ng-show=\"!!error\" style=\"text-align: center\">\n" +
-    "        <strong>Oh my! </strong> {{error}}\n" +
-    "    </div>\n" +
-    "    <a ng-click=\"login()\" class=\"btn btn-primary\">Sign in</a>\n" +
-    "</div>\n" +
-    "");
-}]);
-
 angular.module("template/event/alarms.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/event/alarms.html",
     "<table class=\"table table-condensed\">\n" +
@@ -1883,8 +1855,8 @@ angular.module("template/navigation/navBarTop.html", []).run(["$templateCache", 
     "            </li>\n" +
     "        </ul>\n" +
     "        <ul class=\"nav navbar-nav navbar-right\" ng-hide=\"loading\">\n" +
-    "            <li class=\"dropdown\">\n" +
-    "                <a class=\"dropdown-toggle\">Logged in as {{ userName }} <b class=\"caret\"></b></a>\n" +
+    "            <li class=\"dropdown\" dropdown>\n" +
+    "                <a class=\"dropdown-toggle\" dropdown-toggle href>Logged in as {{ userName }} <b class=\"caret\"></b></a>\n" +
     "                <ul class=\"dropdown-menu\">\n" +
     "                    <li ng-repeat=\"item in sessionMenuItems\"><a href=\"{{ item.route }}\">{{ item.label }}</a></li>\n" +
     "                </ul>\n" +
