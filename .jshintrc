@@ -1,0 +1,17 @@
+{
+  "asi": true,
+  "curly": false,
+  "devel": true,
+  "eqeqeq": true,
+  "strict": true,
+  "undef": true,
+  "unused": true,
+  "browser": true,
+  "predef": {
+    "$": true,
+    "angular": true,
+    "requirejs": true,
+    "require": true,
+    "define": true
+  }
+}

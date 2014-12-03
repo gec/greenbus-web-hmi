@@ -1,4 +1,4 @@
-greenbus-hmi
+greenbus-web-hmi
 ============
 
-GrednBus web HMI based on Coral
+Web HMI based greenbus-web-core and greenbus-web-views
