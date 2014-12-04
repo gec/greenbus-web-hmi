@@ -38,42 +38,32 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
 
 
   def index = Action {
-    Ok(views.html.index("Your new application is ready."))
+    Logger.debug( "Application.index")
+    Redirect( routes.Application.appsOperator)
+//
+//    Ok(views.html.index("Your new application is ready."))
   }
 
   def appsOperator = AuthenticatedPageAction { (request, session) =>
     Logger.debug( "Application.appsOperator")
-    Ok(views.html.operator("Coral Operator"))
+    Ok(views.html.operator("GreenBus HMI Operator"))
   }
 
-  def getMenus( name: String) = ReefClientAction { (request, client) =>
-    Logger.debug( s"/menus/$name")
-
-    val navMenu = if( name.equals( "root")) {
-
-      val applicationsMenu = List[NavigationElement](
+  val appMenuTop = List[NavigationElement](
+    NavigationItem( "GreenBus", "applications", "#/", 
+      children = List[NavigationElement](
         NavigationItem( "Operator", "operator", "/apps/operator/#/"),
         NavigationItem( "Admin", "admin", "/apps/admin/#/")
       )
-      val sessionMenu = List[NavigationElement](
+    ),
+    NavigationItem( "", "session", "",
+      children = List[NavigationElement](
         NavigationItem( "Logout", "logout", "#/logout")
       )
+    )
+  )
 
-      List[NavigationElement](
-        NavigationItem( "GreenBus", "applications", "#/", children = applicationsMenu),
-        NavigationItem( "", "session", "", children = sessionMenu)
-      )
-    } else {
-
-      List[NavigationElement](
-        NavigationHeader( "Unknown menu  '" + name + "'")
-      )
-    }
-
-    Ok( Json.toJson( navMenu))
-  }
-
-  def coralMenusAdmin = {
+  def appAdminMenuLeft = {
     List[NavigationElement](
       NavigationHeader( "Model"),
       NavigationItem( "Entities", "entities", "#/entities", selected=true),
@@ -92,7 +82,7 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
       NavigationItem( "Permission Sets", "permissionsets", "#/permissionsets")
     )
   }
-  def coralMenusOperator = {
+  def appOperatorMenuLeft = {
     val subMenus = List[NavigationElement](
       NavigationItemSource( "Equipment", "equipment", "/measurements/equipment", "/models/1/equipment/$parent/descendants?depth=1", InsertLocation.CHILDREN),
       NavigationItemSource( "Solar", "solar", "/measurements/solar", "/models/1/equipment/$parent/descendants?depth=0&childTypes=PV", InsertLocation.CHILDREN),
@@ -108,20 +98,39 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
       NavigationItem( "Alarms", "alarms", "/alarms")
     )
   }
-  def getCoralMenus( name: String) = ReefClientAction { (request, client) =>
-    Logger.debug( s"/coral/menus/$name")
 
-    val navMenu = name match {
-      case "admin" => coralMenusAdmin
-      case "operator" => coralMenusOperator
-      case _ =>
-        List[NavigationElement](
-          NavigationHeader( "Unknown menu '" + name + "'")
-        )
+
+  def getAppsMenus( app: String, menu: String) = ReefClientAction { (request, client) =>
+    Logger.debug( s"/apps/$app/menus/$menu")
+
+    val navMenu = menu match {
+      case "top" => appMenuTop
+      case "left" =>
+        app match {
+          case "operator" => appOperatorMenuLeft
+          case "admin" => appAdminMenuLeft
+          case _ => List[NavigationElement](NavigationHeader( "Unknown app '" + app + "'"))
+        }
+      case _ => List[NavigationElement](NavigationHeader( "Unknown menu '" + menu + "'"))
     }
-
 
     Ok( Json.toJson( navMenu))
   }
+
+//  def getCoralMenus( name: String) = ReefClientAction { (request, client) =>
+//    Logger.debug( s"/coral/menus/$name")
+//
+//    val navMenu = name match {
+//      case "admin" => appAdminMenuLeft
+//      case "operator" => appOperatorMenuLeft
+//      case _ =>
+//        List[NavigationElement](
+//          NavigationHeader( "Unknown menu '" + name + "'")
+//        )
+//    }
+//
+//
+//    Ok( Json.toJson( navMenu))
+//  }
 
 }

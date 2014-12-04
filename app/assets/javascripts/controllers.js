@@ -22,7 +22,7 @@ define([
 ], function() {
 'use strict';
 
-return angular.module( 'controllers', ['gec.views'] )
+return angular.module( 'controllers', ['greenbus.views'] )
 
 .controller( 'View1Control', [ '$scope', function( $scope) {
     $scope.hey = 'hey'

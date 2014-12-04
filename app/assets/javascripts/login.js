@@ -34,7 +34,7 @@ define([
 
     var app = angular.module('ReefAdmin', [
             'ngRoute',
-            'gec.views.authentication'
+            'greenbus.views.authentication'
         ])
         .config(['$routeProvider', function($routeProvider) {
             $routeProvider.

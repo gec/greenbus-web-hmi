@@ -76,7 +76,7 @@ define([
             'ngRoute',
             'ngAnimate',
             'angularBootstrapNavTree',
-            'gec.views',
+            'greenbus.views',
             'controllers'
 //            'ReefAdmin.services',
 //            'ReefAdmin.filters',
