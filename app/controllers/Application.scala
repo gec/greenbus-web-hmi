@@ -21,6 +21,7 @@
 package controllers
 
 import akka.actor.ActorRef
+import io.greenbus.web.websocket.WebSocketServices
 import play.api._
 import play.api.mvc._
 import play.api.libs.json.Json
@@ -28,7 +29,7 @@ import io.greenbus.web.connection.ReefServiceFactory
 import io.greenbus.web.rest.RestServices
 import io.greenbus.web.config.Navigation._
 
-object Application extends Controller with ReefAuthenticationImpl with RestServices {
+object Application extends Controller with ReefAuthenticationImpl with RestServices with WebSocketServices {
 
   // reefConnectionManager is assigned by Global. Ugly, but can't ask Global _object_ because we need mocked Global during testing.
   var reefConnectionManager: ActorRef = _

@@ -94,8 +94,8 @@ define([
         $routeProvider.
           when('/view1', {templateUrl: '/partials/view1.html', controller: 'View1Control'}).
           when('/logout', {templateUrl: '/partials/login.html', controller: 'LogoutController'}).
-//          when('/measurements', {templateUrl: '/partials/measurements.html', controller: 'MeasurementControl'}).
-//          when('/measurements/:navId', {templateUrl: '/partials/measurements.html', controller: 'MeasurementControl'}).
+          when('/measurements', {templateUrl: '/partials/measurements.html'}).
+          when('/measurements/:navId', {templateUrl: '/partials/measurements.html'}).
 //          when('/chart', {templateUrl: '/partials/chart.html', controller: 'ChartControl'}).
 //          when('/ceses/:id', {templateUrl: '/partials/ceses.html', controller: 'CesesControl'}).
 //          when('/entities', {templateUrl: '/partials/entities.html', controller: 'EntityControl'}).

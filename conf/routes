@@ -3,23 +3,32 @@
 # ~~~~
 
 # Home page
-GET     /                           controllers.Application.index
+GET           /                                                       controllers.Application.index
 
-GET     /login                      controllers.Application.getLoginOrAlreadyLoggedIn
-DELETE  /login                      controllers.Application.deleteLogin
-POST    /login                      controllers.Application.postLogin
+GET           /login                                                  controllers.Application.getLoginOrAlreadyLoggedIn
+DELETE        /login                                                  controllers.Application.deleteLogin
+POST          /login                                                  controllers.Application.postLogin
 
-GET     /apps/operator/                                         controllers.Application.appsOperator
-GET     /apps/:app/menus/:menu                                  controllers.Application.getAppsMenus( app: String, menu: String)
+GET           /websocket                                              controllers.Application.getWebSocket( authToken)
 
-GET     /models/:modelId/equipment                              controllers.Application.getEquipmentRoots( modelId: String, rootTypes: List[String], childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
-GET     /models/:modelId/equipment/:entityId                    controllers.Application.getEquipment( modelId: String, entityId: String, childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
-GET     /models/:modelId/equipment/:entityId/descendants        controllers.Application.getEquipmentDescendants( modelId: String, entityId: String, childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
+GET           /apps/operator/                                         controllers.Application.appsOperator
+GET           /apps/:app/menus/:menu                                  controllers.Application.getAppsMenus( app: String, menu: String)
 
+GET           /models/:modelId/equipment                              controllers.Application.getEquipmentRoots( modelId: String, rootTypes: List[String], childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
+GET           /models/:modelId/equipment/:entityId                    controllers.Application.getEquipment( modelId: String, entityId: String, childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
+GET           /models/:modelId/equipment/:entityId/descendants        controllers.Application.getEquipmentDescendants( modelId: String, entityId: String, childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
+
+GET           /models/:modelId/points                                 controllers.Application.getPoints( modelId: String, equipmentIds: List[String], pointTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
+GET           /models/:modelId/points/:uuid                           controllers.Application.getPoint( modelId: String, uuid: String)
+POST          /models/:modelId/points/commands                        controllers.Application.getPointsCommands( modelId: String)
+
+POST          /models/:modelId/commandlock                            controllers.Application.postCommandLock( modelId: String)
+DELETE        /models/:modelId/commandlock/:id                        controllers.Application.deleteCommandLock( modelId: String, id: String)
+POST          /models/:modelId/commands/:id                           controllers.Application.postCommand( modelId: String, id: String)
 
 # Enable webjar based resources to be returned
-GET     /webjars/*file              controllers.WebJarAssets.at(file)
+GET           /webjars/*file                                          controllers.WebJarAssets.at(file)
 
 # Map static resources from the /public folder to the /assets URL path
 #GET     /assets/*file               controllers.Assets.at(path="/public", file)
-GET     /*file                      controllers.Assets.versioned(path="/public", file: Asset)
+GET           /*file                                                  controllers.Assets.versioned(path="/public", file: Asset)

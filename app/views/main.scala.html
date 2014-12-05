@@ -5,7 +5,7 @@
 <html>  <!-- no ng-app here. With RequireJS, call angular.bootstrap() manually at bottom of each app.js, login.js, etc. -->
     <head>
         <meta charset="utf-8">
-        <title>@title</title>
+        <title>GreenBus @title</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
 
         <link rel="stylesheet" href="@routes.WebJarAssets.at(WebJarAssets.locate("css/bootstrap.css"))">
@@ -13,7 +13,7 @@
         <link rel="stylesheet" href="@routes.Assets.versioned("lib/font-awesome/css/font-awesome.css")">
         <link rel="stylesheet" href="@routes.Assets.versioned("lib/d3-traits/d3-traits.css")">
         <link rel="stylesheet" href="@routes.Assets.versioned("lib/angular-bootstrap-nav-tree/abn_tree.css")">
-        @*<link rel="stylesheet" href="@routes.Assets.versioned("lib/scheduler-views-0.1.0-SNAPSHOT.css")">*@
+        <link rel="stylesheet" href="@routes.Assets.versioned("lib/greenbus-views/greenbus-views-0.1.0-SNAPSHOT.css")">
         <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
 
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/main.css")">
@@ -41,7 +41,7 @@
         <script src="@routes.WebJarAssets.at(WebJarAssets.locate("ui-utils.min.js"))"></script>
         <script src="@routes.WebJarAssets.at(WebJarAssets.locate("moment.js"))"></script>
         <script src="@routes.Assets.versioned("lib/angular-bootstrap-nav-tree/abn_tree_directive.js")"></script>
-        <script src="@routes.Assets.versioned("lib/greenbus-views-tpls-0.1.0-SNAPSHOT.js")"></script>
+        <script src="@routes.Assets.versioned("lib/greenbus-views/greenbus-views-tpls-0.1.0-SNAPSHOT.js")"></script>
 
         @*<script data-main="@routes.Assets.versioned("javascripts/main.js")" src="@routes.Assets.versioned("lib/requirejs/require.js")"></script>*@
         <script data-main="@appModule.url" src="@routes.Assets.versioned("lib/requirejs/require.js")"></script>

@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2014-12-04
+ * Version: 0.1.0-SNAPSHOT - 2014-12-05
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["template/event/alarms.html","template/event/events.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
+angular.module("greenbus.views.tpls", ["template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -762,6 +762,12 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       $scope.sortColumn = 'name'
       $scope.reverse = false
 
+      var CHECKMARK_UNCHECKED = 0,
+          CHECKMARK_CHECKED = 1,
+          CHECKMARK_PARTIAL = 2
+      var CHECKMARK_NEXT_STATE = [1, 0, 0]
+
+
       var navId = $routeParams.navId,
           depth = rest.queryParameterFromArrayOrString( 'depth', $routeParams.depth ),
           equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', $routeParams.equipmentIds )
@@ -1283,13 +1289,13 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
               $scope.points = $scope.points.concat( data[equipmentId])
             }
           }
-          var pointIds = processPointsAndReturnPointIds()
+          var pointIds = processPointsAndReturnPointIds( $scope.points)
           subscribeToMeasurements( pointIds)
           getPointsCommands( pointIds)
         })
       }
 
-      function processPointsAndReturnPointIds() {
+      function processPointsAndReturnPointIds( points) {
         var pointIds = [],
             currentMeasurement = {
               value: '-',
@@ -1300,7 +1306,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
               expandRow: false,
               commandSet: undefined
             }
-        $scope.points.forEach( function ( point ) {
+        points.forEach( function ( point ) {
           point.checked = CHECKMARK_UNCHECKED
           point.currentMeasurement = currentMeasurement
           pointIds.push( point.id )
@@ -1412,13 +1418,86 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
             }
           }
 
-          var pointIds = processPointsAndReturnPointIds()
+          var pointIds = processPointsAndReturnPointIds( $scope.points)
           subscribeToMeasurements( pointIds)
           getPointsCommands( pointIds)
         })
       }
 
-    }])
+    }
+  ]).
+
+  directive( 'gbMeasurements', function(){
+    return {
+      restrict: 'E', // Element name
+      // The template HTML will replace the directive.
+      replace: true,
+      transclude: true,
+      scope: true,
+      templateUrl: 'template/measurement/measurements.html',
+      controller: 'gbMeasurementsController'
+    }
+  }).
+
+  filter('checkboxClass', function() {
+    return function(checked) {
+      switch( checked) {
+        case 0: return 'fa fa-square-o text-muted'
+        case 1: return 'fa fa-check-square-o'
+        case 2: return 'fa fa-minus-square-o'
+        default: return 'fa fa-square-o'
+      }
+    };
+  }).
+
+  filter('validityIcon', function() {
+    return function(validity) {
+      switch( validity) {
+        case 'GOOD': return 'glyphicon glyphicon-ok validity-good';
+        case 'QUESTIONABLE': return 'glyphicon glyphicon-question-sign validity-questionable';
+        case 'NOTLOADED': return 'validity-notloaded'
+        case 'INVALID':
+          return 'glyphicon glyphicon-exclamation-sign validity-invalid';
+        default:
+          return 'glyphicon glyphicon-exclamation-sign validity-invalid';
+      }
+    };
+  }).
+  filter('pointTypeImage', function() {
+    return function(type, unit) {
+      var image
+
+      if( unit === 'raw') {
+        image = '../../images/pointRaw.png'
+      } else {
+        switch( type) {
+          case 'ANALOG': image = '/images/pointAnalog.png'; break;
+          case 'STATUS': image = '/images/pointStatus.png'; break;
+          default: image = '/images/pointRaw.png';
+        }
+      }
+
+      return image
+    };
+  }).
+  filter('pointTypeText', function() {
+    return function(type, unit) {
+      var text
+
+      if( unit === 'raw') {
+        text = 'raw point'
+      } else {
+        switch( type) {
+          case 'ANALOG': text = 'analog point'; break;
+          case 'STATUS': text = 'status point'; break;
+          default: text = 'point with unknown type';
+        }
+      }
+
+      return text
+    };
+  })
+
 
 
 /**
@@ -2598,6 +2677,165 @@ angular.module("template/event/events.html", []).run(["$templateCache", function
     "    </tr>\n" +
     "    </tbody>\n" +
     "</table>\n" +
+    "");
+}]);
+
+angular.module("template/measurement/measurements.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("template/measurement/measurements.html",
+    "<div>\n" +
+    "    <div class=\"row\">\n" +
+    "        <div class=\"col-md-3\">\n" +
+    "            <h2>Measurements</h2>\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-7\" style=\"margin-top: 12px;\">\n" +
+    "            <input type=\"text\"  class=\"form-control input-lg\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
+    "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "\n" +
+    "    <div class=\"ng-cloak\">\n" +
+    "        <table class=\"table table-condensed coral-row-radius\" ng-show=\"points.length > 0\">\n" +
+    "            <thead>\n" +
+    "                <tr>\n" +
+    "                    <th colspan=\"2\" style=\"padding-bottom: 12px;\">\n" +
+    "                        <button class=\"btn btn-default\" ng-click=\"checkUncheckAll()\">\n" +
+    "                            <div class=\"coral-checkbox-container\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "                                <i ng-class=\"checkAllState | checkboxClass\"></i>\n" +
+    "                                <!--<div ng-class=\"checkAllState | checkboxClass\"></div>-->\n" +
+    "                            </div>\n" +
+    "                        </button>\n" +
+    "                        <button class=\"btn btn-default text-muted\" ng-click=\"chartAddSelectedPoints()\" ng-show=\"checkCount>0\" style=\"width: 60px; margin-left: 14px\"><span class=\"glyphicon glyphicon-stats\"></span></button>\n" +
+    "\n" +
+    "                    </th>\n" +
+    "                    <!--<th>Name</th>-->\n" +
+    "                    <th></th>\n" +
+    "                    <th style=\"text-align: right\">Value</th>\n" +
+    "                    <th>Unit</th>\n" +
+    "                    <th>Quality</th>\n" +
+    "                    <th>Time</th>\n" +
+    "                    <th>type</th>\n" +
+    "                </tr>\n" +
+    "            </thead>\n" +
+    "            <tbody>\n" +
+    "                <tr ng-repeat=\"point in pointsFiltered = (points | filter:search | orderBy:sortColumn)\" ng-class=\"rowClasses(point)\">\n" +
+    "                    <td ng-if=\"!point.rowDetail\">\n" +
+    "                        <div class=\"coral-checkbox-container\" ng-click=\"checkUncheck(point)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "                            <i ng-class=\"point.checked | checkboxClass\"></i>\n" +
+    "                            <!--<div ng-class=\"point.checked | checkboxClass\"></div>-->\n" +
+    "                        </div>\n" +
+    "                        <!--<div id=\":2e\" class=\"oZ-jc T-Jo J-J5-Ji T-Jo-Jp\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">-->\n" +
+    "                            <!--<div class=\"T-Jo-auh\"></div>-->\n" +
+    "                        <!--</div>-->\n" +
+    "                    </td>\n" +
+    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">\n" +
+    "                        <div class=\"coral-icon-text draggable\" draggable ident=\"point.id\">\n" +
+    "                            <img class=\"coral-icon\" ng-src=\"{{ point.pointType | pointTypeImage: point.unit }}\" width=\"14px\" height=\"14px\" title=\"{{ point.pointType | pointTypeText: point.unit }}\"/>\n" +
+    "                            {{point.name}}\n" +
+    "                        </div>\n" +
+    "                    </td>\n" +
+    "                    <td ng-if=\"!point.rowDetail\" style=\"text-align: right\">\n" +
+    "                        <a href=\"\" ng-click=\"chartAddPointById(point.id)\"><span class=\"glyphicon glyphicon-stats text-muted\" title=\"Graph measurements\"></span></a>\n" +
+    "                        <!--<i class=\"fa fa-refresh fa-spin\"></i>-->\n" +
+    "                    </td>\n" +
+    "                    <td  ng-if=\"!point.rowDetail\" class=\"coral-value\" ng-click=\"togglePointRowById(point.id)\">\n" +
+    "                        <span class=\"glyphicon glyphicon-edit pull-left text-muted\" style=\"padding-right: 10px; opacity: {{ point.commandSet ? 1 : 0 }}\" title=\"Control or Setpoint\"></span>\n" +
+    "                        {{point.currentMeasurement.value}}\n" +
+    "                    </td>\n" +
+    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.unit}}</td>\n" +
+    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\" style=\"padding-bottom: 0\"><span ng-class=\"point.currentMeasurement.validity | validityIcon\" title=\"{{point.currentMeasurement.longQuality}}\"></span></td>\n" +
+    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.currentMeasurement.time | date:'h:mm:ss a, MM-dd-yyyy'}}</td>\n" +
+    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{ point.pointType }}</td>\n" +
+    "\n" +
+    "\n" +
+    "\n" +
+    "                    <td ng-if=\"point.rowDetail\" colspan=\"8\">\n" +
+    "\n" +
+    "                        <div class=\"row\">\n" +
+    "                            <div class=\"col-md-1\">\n" +
+    "\n" +
+    "                            </div>\n" +
+    "                            <div class=\"col-md-10\">\n" +
+    "\n" +
+    "                                <form class=\"form-horizontal\" role=\"form\" name=\"form\">\n" +
+    "                                    <div class=\"form-group\" ng-repeat=\"command in point.commandSet.commands\">\n" +
+    "                                        <label class=\"col-sm-5 control-label\">\n" +
+    "                                            {{ command.displayName }}\n" +
+    "                                        </label>\n" +
+    "                                        <div class=\"col-sm-7\">\n" +
+    "                                            <div class=\"btn-toolbar\" role=\"toolbar\">\n" +
+    "                                                <div class=\"btn-group\">\n" +
+    "                                                    <!--<button type=\"button\" class=\"btn btn-default\"><i ng-class=\"command.blockClasses\"></i> Block</button>-->\n" +
+    "                                                    <button type=\"button\" class=\"btn btn-default\" ng-click=\"point.commandSet.selectToggle( command)\">Select <i ng-class=\"command.selectClasses\"></i></button>\n" +
+    "                                                </div>\n" +
+    "\n" +
+    "                                                <button ng-if=\"!command.isSetpoint\" type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
+    "                                                    Execute <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
+    "                                                </button>\n" +
+    "\n" +
+    "                                                <div ng-if=\"command.isSetpoint\" class=\"input-group input-group-sm-  {{form.setpoint_value.$error.pattern ? 'has-error' : ''}}\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
+    "                                                    <input type=\"text\" class=\"form-control\" ng-model=\"command.setpointValue\" name=\"setpoint_value\" ng-pattern=\"command.pattern\" style=\"width:6em;\" placeholder=\"{{ command.placeHolder}}\">\n" +
+    "                                                    <button type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"border-top-left-radius: 0; border-bottom-left-radius: 0;\">\n" +
+    "                                                        Set\n" +
+    "                                                        <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
+    "                                                    </button>\n" +
+    "                                                </div>\n" +
+    "                                            </div>\n" +
+    "                                        </div>\n" +
+    "                                    </div>\n" +
+    "                                </form>\n" +
+    "\n" +
+    "                            </div>\n" +
+    "                            <div class=\"col-md-1\">\n" +
+    "                            </div>\n" +
+    "                        </div>\n" +
+    "\n" +
+    "                        <div class=\"row\">\n" +
+    "                            <div class=\"col-md-1\">\n" +
+    "                            </div>\n" +
+    "                            <div class=\"col-md-10\">\n" +
+    "                                <alert ng-repeat=\"alert in point.commandSet.alerts\" type=\"alert.type\" close=\"point.commandSet.closeAlert($index)\" style=\"text-align: left; white-space: normal;\">{{alert.message}}</alert>\n" +
+    "                            </div>\n" +
+    "                            <div class=\"col-md-1\">\n" +
+    "                            </div>\n" +
+    "                        </div>\n" +
+    "\n" +
+    "                    </td>\n" +
+    "                </tr>\n" +
+    "            </tbody>\n" +
+    "        </table>\n" +
+    "    </div>\n" +
+    "\n" +
+    "    <!--<div ng-include src=\"'/partials/loadingprogress.html'\"></div>-->\n" +
+    "\n" +
+    "    <!--<div class=\"navbar-fixed-bottom invisible\">-->\n" +
+    "        <!--<div class=\"coral-chart\" ng-repeat=\"chart in charts\">-->\n" +
+    "            <!--<div class=\"coral-win\" >-->\n" +
+    "                <!--<div class=\"coral-win-titlebar clearfix\">-->\n" +
+    "                    <!--<p class=\"coral-win-title\"><span class=\"glyphicon glyphicon-stats\" style=\"top: 0; vertical-align: top; margin-right:4px\"></span> <span>{{ chart.name }}</span></p>-->\n" +
+    "                    <!--<div class=\"coral-win-actions\">-->\n" +
+    "                        <!--<a href=\"\" ng-click=\"\"><i class=\"glyphicon glyphicon-minus icon-white\" style=\"margin-top: 5px\"></i></a>-->\n" +
+    "                        <!--<a href=\"\" ng-click=\"chartPopout($index)\"><i class=\"glyphicon glyphicon-share-alt icon-white\"></i></a>-->\n" +
+    "                        <!--<a href=\"\" ng-click=\"chartRemove($index)\"><i class=\"glyphicon glyphicon-remove icon-white\"></i></a>-->\n" +
+    "                    <!--</div>-->\n" +
+    "                <!--</div>-->\n" +
+    "                <!--<ul class=\"nav nav-pills\" style=\"margin-bottom: 5px; font-size: 86%\">-->\n" +
+    "                    <!--<li class=\"coral-legend\" ng-repeat=\"point in chart.points\">-->\n" +
+    "                        <!--<div class=\"coral-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">-->\n" +
+    "                            <!--<span class=\"coral-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>-->\n" +
+    "                            <!--<a class=\"coral-remove\" href=\"\" ng-click=\"removePoint( chart, point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>-->\n" +
+    "                        <!--</div>-->\n" +
+    "                    <!--</li>-->\n" +
+    "                <!--</ul>-->\n" +
+    "                <!--<div class=\"coral-win-container\">-->\n" +
+    "                    <!--<div class=\"coral-win-content\" droppable target=\"chart\" on-drop=\"onDropPoint\">-->\n" +
+    "                        <!--<div chart=\"chart.traits\" data=\"chart.points\" selection=\"chart.selection\"  style=\"height: 150px\"></div>-->\n" +
+    "                    <!--</div>-->\n" +
+    "                <!--</div>-->\n" +
+    "            <!--</div>-->\n" +
+    "        <!--</div>-->\n" +
+    "    <!--</div>-->\n" +
+    "</div>\n" +
+    "\n" +
     "");
 }]);
 
