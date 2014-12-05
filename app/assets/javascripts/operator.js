@@ -96,6 +96,9 @@ define([
           when('/logout', {templateUrl: '/partials/login.html', controller: 'LogoutController'}).
           when('/measurements', {templateUrl: '/partials/measurements.html'}).
           when('/measurements/:navId', {templateUrl: '/partials/measurements.html'}).
+          when('/events', {templateUrl: '/partials/events.html'}).
+          when('/alarms', {templateUrl: '/partials/alarms.html'}).
+          when('/endpoints', {templateUrl: '/partials/endpoints.html'}).
 //          when('/chart', {templateUrl: '/partials/chart.html', controller: 'ChartControl'}).
 //          when('/ceses/:id', {templateUrl: '/partials/ceses.html', controller: 'CesesControl'}).
 //          when('/entities', {templateUrl: '/partials/entities.html', controller: 'EntityControl'}).
@@ -105,11 +108,8 @@ define([
 //          when('/pointsfornav/:navId', {templateUrl: '/partials/points.html', controller: 'PointsForNavControl'}).
 //          when('/commands', {templateUrl: '/partials/commands.html', controller: 'CommandControl'}).
 //          when('/commands/:name', {templateUrl: '/partials/commanddetail.html', controller: 'CommandDetailControl'}).
-//          when('/endpoints', {templateUrl: '/partials/endpoints.html', controller: 'EndpointControl'}).
 //          when('/applications', {templateUrl: '/partials/applications.html', controller: 'ApplicationControl'}).
 //          when('/applications/:name', {templateUrl: '/partials/applicationdetail.html', controller: 'ApplicationDetailControl'}).
-//          when('/events', {templateUrl: '/partials/events.html', controller: 'EventControl'}).
-//          when('/alarms', {templateUrl: '/partials/alarms.html', controller: 'AlarmControl'}).
 //          when('/agents', {templateUrl: '/partials/agents.html', controller: 'AgentControl'}).
 //          when('/agents/:name', {templateUrl: '/partials/agentdetail.html', controller: 'AgentDetailControl'}).
 //          when('/permissionsets', {templateUrl: '/partials/permissionsets.html', controller: 'PermissionSetControl'}).

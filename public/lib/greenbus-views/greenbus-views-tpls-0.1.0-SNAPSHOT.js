@@ -5,8 +5,8 @@
  * Version: 0.1.0-SNAPSHOT - 2014-12-05
  * License: Apache Version 2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.endpoint","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["template/endpoint/endpoints.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -329,23 +329,193 @@ angular.module('greenbus.views.authentication', ['ngCookies', 'ui.bootstrap', 'u
   }]);
 
 /**
-* Copyright 2013-2014 Green Energy Corp.
-*
-* Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
-* contributor license agreements. See the NOTICE file distributed with this
-* work for additional information regarding copyright ownership. Green Energy
-* Corp licenses this file to you under the Apache License, Version 2.0 (the
-* "License"); you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-* License for the specific language governing permissions and limitations under
-* the License.
-*/
+ * Copyright 2013-2014 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * 'License'); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ *
+ */
+
+
+
+angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.views.subscription']).
+
+  controller( 'gbEndpointsController', ['$scope', 'rest', 'subscription', function( $scope, rest, subscription) {
+    $scope.endpoints = []
+
+    var CommStatusNames = {
+      COMMS_DOWN: 'Down',
+      COMMS_UP: 'Up',
+      ERROR: 'Error',
+      UNKNOWN: 'Unknown'
+    }
+
+    function findEndpointIndex( id) {
+      var i, endpoint,
+          length = $scope.endpoints.length
+
+      for( i = 0; i < length; i++) {
+        endpoint = $scope.endpoints[i]
+        if( endpoint.id === id)
+          return i
+      }
+      return -1
+    }
+    function findEndpoint( id) {
+
+      var index = findEndpointIndex( id)
+      if( index >= 0)
+        return $scope.endpoints[index]
+      else
+        return null
+    }
+
+
+
+    function getCommStatus( commStatus) {
+      var status = CommStatusNames.UNKNOWN,
+          lastHeartbeat = 0
+      if( commStatus) {
+        var statusValue = commStatus.status || 'UNKNOWN'
+        status = CommStatusNames[statusValue]
+        lastHeartbeat = commStatus.lastHeartbeat || 0
+      }
+      return { status: status, lastHeartbeat: lastHeartbeat}
+    }
+    function updateEndpoint( update) {
+      var endpoint = findEndpoint( update.id)
+      if( endpoint) {
+        if( update.hasOwnProperty( 'name'))
+          endpoint.name = update.name
+        if( update.hasOwnProperty( 'protocol'))
+          endpoint.protocol = update.protocol
+        if( update.hasOwnProperty( 'enabled'))
+          endpoint.enabled = update.enabled
+        if( update.hasOwnProperty( 'commStatus')) {
+          endpoint.commStatus = getCommStatus( update.commStatus)
+        }
+      }
+    }
+    function removeEndpoint( id) {
+      var index = findEndpointIndex( id)
+      if( index >= 0)
+        return $scope.endpoints.splice(index,1)
+    }
+
+    function messageEndpoints( endpoints) {
+      endpoints.forEach( function( endpoint) {
+        updateEndpoint( endpoint)
+      })
+    }
+
+    function messageEndpoint( endpointNotification) {
+      var ep = endpointNotification.endpoint
+      switch( endpointNotification.eventType) {
+        case 'ADDED':
+          ep.commStatus = getCommStatus( ep.commStatus)
+          $scope.endpoints.push( ep)
+          break;
+        case 'MODIFIED':
+          updateEndpoint( endpointNotification.endpoint)
+          break;
+        case 'REMOVED':
+          removeEndpoint( endpointNotification.endpoint)
+          break;
+      }
+    }
+
+    rest.get( '/models/1/endpoints', 'endpoints', $scope, function(data){
+      var endpointIds = data.map( function(endpoint){ return endpoint.id})
+      $scope.endpoints.forEach( function(endpoint){
+        endpoint.commStatus = getCommStatus( endpoint.commStatus)
+      })
+      subscription.subscribe(
+        {subscribeToEndpoints: {'endpointIds': endpointIds}},
+        $scope,
+        function( subscriptionId, messageType, endpointNotification){
+          switch( messageType) {
+            case 'endpoints': messageEndpoints( endpointNotification); break; // subscription return.
+            case 'endpoint': messageEndpoint( endpointNotification); break;   // subscribe push
+            default:
+              console.error( 'EndpointController.subscription unknown message type "' + messageType + '"')
+          }
+          $scope.$digest()
+        },
+        function( messageError, message){
+          console.error( 'EndpointController.subscription error: ' + messageError)
+        })
+
+    });
+  }]).
+
+  directive( 'gbEndpoints', function(){
+    return {
+      restrict: 'E', // Element name
+      // This HTML will replace the directive.
+      replace: true,
+      transclude: true,
+      scope: true,
+      templateUrl: 'template/endpoint/endpoints.html',
+      controller: 'gbEndpointsController'
+    }
+  }).
+  filter('gbCommStatusIcon', function() {
+    function getCss( enabled, statusString) {
+      if( enabled)
+        return 'gb-comms-enabled-' + statusString
+      else
+        return 'gb-comms-disabled-' + statusString
+    }
+    return function(status, enabled) {
+      var klass
+      switch( status) {
+        case 'Up': klass = 'glyphicon glyphicon-arrow-up ' + getCss( enabled, 'up'); break;
+        case 'Down': klass = 'glyphicon glyphicon-arrow-down ' + getCss( enabled, 'down'); break;
+        case 'Error': klass = 'glyphicon glyphicon-exclamation-sign ' + getCss( enabled, 'error'); break;
+        case 'Unknown': klass = 'glyphicon glyphicon-question-sign ' + getCss( enabled, 'unknown'); break;
+        default:
+          klass = 'glyphicon glyphicon-question-sign ' + getCss( enabled, 'unknown');
+      }
+      return klass
+    };
+  });
+
+
+/**
+ * Copyright 2013-2014 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ *
+ */
 
 
 
@@ -749,8 +919,8 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     }
   }]).
 
-  controller( 'gbMeasurementsController', ['$rootScope', '$scope', '$window', '$routeParams', '$filter', 'rest', 'navigation', 'subscription', 'measurement', 'request', '$timeout',
-    function( $rootScope, $scope, $window, $routeParams, $filter, rest, navigation, subscription, measurement, request, $timeout) {
+  controller( 'gbMeasurementsController', ['$scope', '$window', '$routeParams', '$filter', 'rest', 'navigation', 'subscription', 'measurement', 'request', '$timeout',
+    function( $scope, $window, $routeParams, $filter, rest, navigation, subscription, measurement, request, $timeout) {
       $scope.points = []
       $scope.pointsFiltered = []
       $scope.checkAllState = CHECKMARK_UNCHECKED
@@ -764,23 +934,14 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
 
       var CHECKMARK_UNCHECKED = 0,
           CHECKMARK_CHECKED = 1,
-          CHECKMARK_PARTIAL = 2
-      var CHECKMARK_NEXT_STATE = [1, 0, 0]
-
+          CHECKMARK_PARTIAL = 2,
+          CHECKMARK_NEXT_STATE = [1, 0, 0]
 
       var navId = $routeParams.navId,
           depth = rest.queryParameterFromArrayOrString( 'depth', $routeParams.depth ),
-          equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', $routeParams.equipmentIds )
+          equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', $routeParams.equipmentIds),
+          number = $filter( 'number' )
 
-
-
-      $rootScope.currentMenuItem = 'measurements'
-      $rootScope.breadcrumbs = [
-        { name: 'Reef', url: '#/'},
-        { name: 'Measurements' }
-      ]
-
-      var number = $filter( 'number' )
 
       function formatMeasurementValue( value ) {
         if( typeof value === 'boolean' || isNaN( value ) || !isFinite( value ) ) {
@@ -1138,9 +1299,9 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
 
 
       $scope.rowClasses = function( point) {
-        return point.rowDetail ? 'coral-row-selected-detail animate-repeat'
-          : point.rowSelected ? 'coral-row-selected animate-repeat'
-          : point.commandSet ? 'coral-row-selectable animate-repeat'
+        return point.rowDetail ? 'gb-row-selected-detail animate-repeat'
+          : point.rowSelected ? 'gb-row-selected animate-repeat'
+          : point.commandSet ? 'gb-row-selectable animate-repeat'
           : 'animate-repeat'
       }
       $scope.togglePointRowById = function( id) {
@@ -2627,56 +2788,99 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
   }]);
 
+angular.module("template/endpoint/endpoints.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("template/endpoint/endpoints.html",
+    "<div>\n" +
+    "    <h3>Endpoints</h3>\n" +
+    "\n" +
+    "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "        <table class=\"table table-condensed\">\n" +
+    "            <thead>\n" +
+    "            <tr>\n" +
+    "                <th>Name</th>\n" +
+    "                <th>Protocol</th>\n" +
+    "                <th>Enabled</th>\n" +
+    "                <th>Comms Status</th>\n" +
+    "                <th>Last Heartbeat</th>\n" +
+    "            </tr>\n" +
+    "            </thead>\n" +
+    "            <tbody>\n" +
+    "            <tr class=\"gb-endpoint\" ng-repeat=\"ep in endpoints\">\n" +
+    "                <td>{{ep.name}}</td>\n" +
+    "                <td>{{ep.protocol}}</td>\n" +
+    "                <td>{{ep.enabled}}</td>\n" +
+    "                <td><span ng-class=\"ep.commStatus.status | gbCommStatusIcon: ep.enabled\"></span> {{ep.commStatus.status}}</td>\n" +
+    "                <td>{{ep.commStatus.lastHeartbeat | date:\"hh:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
+    "            </tr>\n" +
+    "            </tbody>\n" +
+    "        </table>\n" +
+    "    </div>\n" +
+    "</div>\n" +
+    "\n" +
+    "");
+}]);
+
 angular.module("template/event/alarms.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/event/alarms.html",
-    "<table class=\"table table-condensed\">\n" +
-    "    <thead>\n" +
-    "    <tr>\n" +
-    "        <th>State</th>\n" +
-    "        <th>Type</th>\n" +
-    "        <th>Sev</th>\n" +
-    "        <th>User</th>\n" +
-    "        <th>Message</th>\n" +
-    "        <th>Time</th>\n" +
-    "    </tr>\n" +
-    "    </thead>\n" +
-    "    <tbody>\n" +
-    "    <tr ng-repeat=\"alarm in alarms\">\n" +
-    "        <td>{{alarm.state}}</td>\n" +
-    "        <td>{{alarm.event.eventType}}</td>\n" +
-    "        <td>{{alarm.event.severity}}</td>\n" +
-    "        <td>{{alarm.event.agent}}</td>\n" +
-    "        <td>{{alarm.event.message}}</td>\n" +
-    "        <td>{{alarm.event.time | date:\"h:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
-    "    </tr>\n" +
-    "    </tbody>\n" +
-    "</table>");
+    "<div>\n" +
+    "    <h3>Alarms</h3>\n" +
+    "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "        <table class=\"table table-condensed\">\n" +
+    "            <thead>\n" +
+    "            <tr>\n" +
+    "                <th>State</th>\n" +
+    "                <th>Type</th>\n" +
+    "                <th>Sev</th>\n" +
+    "                <th>User</th>\n" +
+    "                <th>Message</th>\n" +
+    "                <th>Time</th>\n" +
+    "            </tr>\n" +
+    "            </thead>\n" +
+    "            <tbody>\n" +
+    "            <tr ng-repeat=\"alarm in alarms\">\n" +
+    "                <td>{{alarm.state}}</td>\n" +
+    "                <td>{{alarm.event.eventType}}</td>\n" +
+    "                <td>{{alarm.event.severity}}</td>\n" +
+    "                <td>{{alarm.event.agent}}</td>\n" +
+    "                <td>{{alarm.event.message}}</td>\n" +
+    "                <td>{{alarm.event.time | date:\"h:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
+    "            </tr>\n" +
+    "            </tbody>\n" +
+    "        </table>\n" +
+    "    </div>\n" +
+    "</div>\n" +
+    "");
 }]);
 
 angular.module("template/event/events.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/event/events.html",
-    "<table class=\"table table-condensed\">\n" +
-    "    <thead>\n" +
-    "    <tr>\n" +
-    "        <th>Type</th>\n" +
-    "        <th>Alarm</th>\n" +
-    "        <th>Sev</th>\n" +
-    "        <th>User</th>\n" +
-    "        <th>Message</th>\n" +
-    "        <th>Time</th>\n" +
-    "    </tr>\n" +
-    "    </thead>\n" +
-    "    <tbody>\n" +
-    "    <tr class=\"gb-event\" ng-repeat=\"event in events\">\n" +
-    "        <td>{{event.eventType}}</td>\n" +
-    "        <td>{{event.alarm}}</td>\n" +
-    "        <td>{{event.severity}}</td>\n" +
-    "        <td>{{event.agent}}</td>\n" +
-    "        <td>{{event.message}}</td>\n" +
-    "        <td>{{event.time | date:\"h:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
-    "    </tr>\n" +
-    "    </tbody>\n" +
-    "</table>\n" +
+    "<div>\n" +
+    "    <h3>Events</h3>\n" +
+    "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "        <table class=\"table table-condensed\">\n" +
+    "            <thead>\n" +
+    "            <tr>\n" +
+    "                <th>Type</th>\n" +
+    "                <th>Alarm</th>\n" +
+    "                <th>Sev</th>\n" +
+    "                <th>User</th>\n" +
+    "                <th>Message</th>\n" +
+    "                <th>Time</th>\n" +
+    "            </tr>\n" +
+    "            </thead>\n" +
+    "            <tbody>\n" +
+    "            <tr class=\"gb-event\" ng-repeat=\"event in events\">\n" +
+    "                <td>{{event.eventType}}</td>\n" +
+    "                <td>{{event.alarm}}</td>\n" +
+    "                <td>{{event.severity}}</td>\n" +
+    "                <td>{{event.agent}}</td>\n" +
+    "                <td>{{event.message}}</td>\n" +
+    "                <td>{{event.time | date:\"h:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
+    "            </tr>\n" +
+    "            </tbody>\n" +
+    "        </table>\n" +
+    "    </div>\n" +
+    "</div>\n" +
     "");
 }]);
 
@@ -2684,150 +2888,154 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
   $templateCache.put("template/measurement/measurements.html",
     "<div>\n" +
     "    <div class=\"row\">\n" +
-    "        <div class=\"col-md-3\">\n" +
-    "            <h2>Measurements</h2>\n" +
+    "        <div class=\"col-md-5\">\n" +
+    "            <h3>Measurements</h3>\n" +
     "        </div>\n" +
-    "        <div class=\"col-md-7\" style=\"margin-top: 12px;\">\n" +
-    "            <input type=\"text\"  class=\"form-control input-lg\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
+    "        <div class=\"col-md-7\" style=\"margin-top: 1.2em;\">\n" +
+    "            <input type=\"text\"  class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
     "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
     "        </div>\n" +
     "    </div>\n" +
     "\n" +
-    "    <div class=\"ng-cloak\">\n" +
-    "        <table class=\"table table-condensed coral-row-radius\" ng-show=\"points.length > 0\">\n" +
-    "            <thead>\n" +
-    "                <tr>\n" +
-    "                    <th colspan=\"2\" style=\"padding-bottom: 12px;\">\n" +
-    "                        <button class=\"btn btn-default\" ng-click=\"checkUncheckAll()\">\n" +
-    "                            <div class=\"coral-checkbox-container\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
-    "                                <i ng-class=\"checkAllState | checkboxClass\"></i>\n" +
-    "                                <!--<div ng-class=\"checkAllState | checkboxClass\"></div>-->\n" +
-    "                            </div>\n" +
-    "                        </button>\n" +
-    "                        <button class=\"btn btn-default text-muted\" ng-click=\"chartAddSelectedPoints()\" ng-show=\"checkCount>0\" style=\"width: 60px; margin-left: 14px\"><span class=\"glyphicon glyphicon-stats\"></span></button>\n" +
+    "    <div class=\"row\">\n" +
+    "        <div class=\"col-md-12\">\n" +
+    "            <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "                <table class=\"table table-condensed gb-row-radius\" ng-show=\"points.length > 0\">\n" +
+    "                    <thead>\n" +
+    "                    <tr>\n" +
+    "                        <th colspan=\"2\" style=\"padding-bottom: 12px;\">\n" +
+    "                            <button class=\"btn btn-default\" ng-click=\"checkUncheckAll()\">\n" +
+    "                                <div class=\"gb-checkbox-container\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "                                    <i ng-class=\"checkAllState | checkboxClass\"></i>\n" +
+    "                                    <!--<div ng-class=\"checkAllState | checkboxClass\"></div>-->\n" +
+    "                                </div>\n" +
+    "                            </button>\n" +
+    "                            <button class=\"btn btn-default text-muted\" ng-click=\"chartAddSelectedPoints()\" ng-show=\"checkCount>0\" style=\"width: 60px; margin-left: 14px\"><span class=\"glyphicon glyphicon-stats\"></span></button>\n" +
     "\n" +
-    "                    </th>\n" +
-    "                    <!--<th>Name</th>-->\n" +
-    "                    <th></th>\n" +
-    "                    <th style=\"text-align: right\">Value</th>\n" +
-    "                    <th>Unit</th>\n" +
-    "                    <th>Quality</th>\n" +
-    "                    <th>Time</th>\n" +
-    "                    <th>type</th>\n" +
-    "                </tr>\n" +
-    "            </thead>\n" +
-    "            <tbody>\n" +
-    "                <tr ng-repeat=\"point in pointsFiltered = (points | filter:search | orderBy:sortColumn)\" ng-class=\"rowClasses(point)\">\n" +
-    "                    <td ng-if=\"!point.rowDetail\">\n" +
-    "                        <div class=\"coral-checkbox-container\" ng-click=\"checkUncheck(point)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
-    "                            <i ng-class=\"point.checked | checkboxClass\"></i>\n" +
-    "                            <!--<div ng-class=\"point.checked | checkboxClass\"></div>-->\n" +
-    "                        </div>\n" +
-    "                        <!--<div id=\":2e\" class=\"oZ-jc T-Jo J-J5-Ji T-Jo-Jp\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">-->\n" +
+    "                        </th>\n" +
+    "                        <!--<th>Name</th>-->\n" +
+    "                        <th></th>\n" +
+    "                        <th style=\"text-align: right\">Value</th>\n" +
+    "                        <th>Unit</th>\n" +
+    "                        <th>Quality</th>\n" +
+    "                        <th>Time</th>\n" +
+    "                        <th>type</th>\n" +
+    "                    </tr>\n" +
+    "                    </thead>\n" +
+    "                    <tbody>\n" +
+    "                    <tr ng-repeat=\"point in pointsFiltered = (points | filter:search | orderBy:sortColumn)\" ng-class=\"rowClasses(point)\">\n" +
+    "                        <td ng-if=\"!point.rowDetail\">\n" +
+    "                            <div class=\"gb-checkbox-container\" ng-click=\"checkUncheck(point)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "                                <i ng-class=\"point.checked | checkboxClass\"></i>\n" +
+    "                                <!--<div ng-class=\"point.checked | checkboxClass\"></div>-->\n" +
+    "                            </div>\n" +
+    "                            <!--<div id=\":2e\" class=\"oZ-jc T-Jo J-J5-Ji T-Jo-Jp\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">-->\n" +
     "                            <!--<div class=\"T-Jo-auh\"></div>-->\n" +
-    "                        <!--</div>-->\n" +
-    "                    </td>\n" +
-    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">\n" +
-    "                        <div class=\"coral-icon-text draggable\" draggable ident=\"point.id\">\n" +
-    "                            <img class=\"coral-icon\" ng-src=\"{{ point.pointType | pointTypeImage: point.unit }}\" width=\"14px\" height=\"14px\" title=\"{{ point.pointType | pointTypeText: point.unit }}\"/>\n" +
-    "                            {{point.name}}\n" +
-    "                        </div>\n" +
-    "                    </td>\n" +
-    "                    <td ng-if=\"!point.rowDetail\" style=\"text-align: right\">\n" +
-    "                        <a href=\"\" ng-click=\"chartAddPointById(point.id)\"><span class=\"glyphicon glyphicon-stats text-muted\" title=\"Graph measurements\"></span></a>\n" +
-    "                        <!--<i class=\"fa fa-refresh fa-spin\"></i>-->\n" +
-    "                    </td>\n" +
-    "                    <td  ng-if=\"!point.rowDetail\" class=\"coral-value\" ng-click=\"togglePointRowById(point.id)\">\n" +
-    "                        <span class=\"glyphicon glyphicon-edit pull-left text-muted\" style=\"padding-right: 10px; opacity: {{ point.commandSet ? 1 : 0 }}\" title=\"Control or Setpoint\"></span>\n" +
-    "                        {{point.currentMeasurement.value}}\n" +
-    "                    </td>\n" +
-    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.unit}}</td>\n" +
-    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\" style=\"padding-bottom: 0\"><span ng-class=\"point.currentMeasurement.validity | validityIcon\" title=\"{{point.currentMeasurement.longQuality}}\"></span></td>\n" +
-    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.currentMeasurement.time | date:'h:mm:ss a, MM-dd-yyyy'}}</td>\n" +
-    "                    <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{ point.pointType }}</td>\n" +
-    "\n" +
-    "\n" +
-    "\n" +
-    "                    <td ng-if=\"point.rowDetail\" colspan=\"8\">\n" +
-    "\n" +
-    "                        <div class=\"row\">\n" +
-    "                            <div class=\"col-md-1\">\n" +
-    "\n" +
+    "                            <!--</div>-->\n" +
+    "                        </td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">\n" +
+    "                            <div class=\"gb-icon-text draggable\" draggable ident=\"point.id\">\n" +
+    "                                <img class=\"gb-icon\" ng-src=\"{{ point.pointType | pointTypeImage: point.unit }}\" width=\"14px\" height=\"14px\" title=\"{{ point.pointType | pointTypeText: point.unit }}\"/>\n" +
+    "                                {{point.name}}\n" +
     "                            </div>\n" +
-    "                            <div class=\"col-md-10\">\n" +
+    "                        </td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" style=\"text-align: right\">\n" +
+    "                            <a href=\"\" ng-click=\"chartAddPointById(point.id)\"><span class=\"glyphicon glyphicon-stats text-muted\" title=\"Graph measurements\"></span></a>\n" +
+    "                            <!--<i class=\"fa fa-refresh fa-spin\"></i>-->\n" +
+    "                        </td>\n" +
+    "                        <td  ng-if=\"!point.rowDetail\" class=\"gb-value\" ng-click=\"togglePointRowById(point.id)\">\n" +
+    "                            <span class=\"glyphicon glyphicon-edit pull-left text-muted\" style=\"padding-right: 10px; opacity: {{ point.commandSet ? 1 : 0 }}\" title=\"Control or Setpoint\"></span>\n" +
+    "                            {{point.currentMeasurement.value}}\n" +
+    "                        </td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.unit}}</td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\" style=\"padding-bottom: 0\"><span ng-class=\"point.currentMeasurement.validity | validityIcon\" title=\"{{point.currentMeasurement.longQuality}}\"></span></td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.currentMeasurement.time | date:'h:mm:ss a, MM-dd-yyyy'}}</td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{ point.pointType }}</td>\n" +
     "\n" +
-    "                                <form class=\"form-horizontal\" role=\"form\" name=\"form\">\n" +
-    "                                    <div class=\"form-group\" ng-repeat=\"command in point.commandSet.commands\">\n" +
-    "                                        <label class=\"col-sm-5 control-label\">\n" +
-    "                                            {{ command.displayName }}\n" +
-    "                                        </label>\n" +
-    "                                        <div class=\"col-sm-7\">\n" +
-    "                                            <div class=\"btn-toolbar\" role=\"toolbar\">\n" +
-    "                                                <div class=\"btn-group\">\n" +
-    "                                                    <!--<button type=\"button\" class=\"btn btn-default\"><i ng-class=\"command.blockClasses\"></i> Block</button>-->\n" +
-    "                                                    <button type=\"button\" class=\"btn btn-default\" ng-click=\"point.commandSet.selectToggle( command)\">Select <i ng-class=\"command.selectClasses\"></i></button>\n" +
-    "                                                </div>\n" +
     "\n" +
-    "                                                <button ng-if=\"!command.isSetpoint\" type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
-    "                                                    Execute <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
-    "                                                </button>\n" +
     "\n" +
-    "                                                <div ng-if=\"command.isSetpoint\" class=\"input-group input-group-sm-  {{form.setpoint_value.$error.pattern ? 'has-error' : ''}}\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
-    "                                                    <input type=\"text\" class=\"form-control\" ng-model=\"command.setpointValue\" name=\"setpoint_value\" ng-pattern=\"command.pattern\" style=\"width:6em;\" placeholder=\"{{ command.placeHolder}}\">\n" +
-    "                                                    <button type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"border-top-left-radius: 0; border-bottom-left-radius: 0;\">\n" +
-    "                                                        Set\n" +
-    "                                                        <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
+    "                        <td ng-if=\"point.rowDetail\" colspan=\"8\">\n" +
+    "\n" +
+    "                            <div class=\"row\">\n" +
+    "                                <div class=\"col-md-1\">\n" +
+    "\n" +
+    "                                </div>\n" +
+    "                                <div class=\"col-md-10\">\n" +
+    "\n" +
+    "                                    <form class=\"form-horizontal\" role=\"form\" name=\"form\">\n" +
+    "                                        <div class=\"form-group\" ng-repeat=\"command in point.commandSet.commands\">\n" +
+    "                                            <label class=\"col-sm-5 control-label\">\n" +
+    "                                                {{ command.displayName }}\n" +
+    "                                            </label>\n" +
+    "                                            <div class=\"col-sm-7\">\n" +
+    "                                                <div class=\"btn-toolbar\" role=\"toolbar\">\n" +
+    "                                                    <div class=\"btn-group\">\n" +
+    "                                                        <!--<button type=\"button\" class=\"btn btn-default\"><i ng-class=\"command.blockClasses\"></i> Block</button>-->\n" +
+    "                                                        <button type=\"button\" class=\"btn btn-default\" ng-click=\"point.commandSet.selectToggle( command)\">Select <i ng-class=\"command.selectClasses\"></i></button>\n" +
+    "                                                    </div>\n" +
+    "\n" +
+    "                                                    <button ng-if=\"!command.isSetpoint\" type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
+    "                                                        Execute <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
     "                                                    </button>\n" +
+    "\n" +
+    "                                                    <div ng-if=\"command.isSetpoint\" class=\"input-group input-group-sm-  {{form.setpoint_value.$error.pattern ? 'has-error' : ''}}\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
+    "                                                        <input type=\"text\" class=\"form-control\" ng-model=\"command.setpointValue\" name=\"setpoint_value\" ng-pattern=\"command.pattern\" style=\"width:6em;\" placeholder=\"{{ command.placeHolder}}\">\n" +
+    "                                                        <button type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"border-top-left-radius: 0; border-bottom-left-radius: 0;\">\n" +
+    "                                                            Set\n" +
+    "                                                            <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
+    "                                                        </button>\n" +
+    "                                                    </div>\n" +
     "                                                </div>\n" +
     "                                            </div>\n" +
     "                                        </div>\n" +
-    "                                    </div>\n" +
-    "                                </form>\n" +
+    "                                    </form>\n" +
     "\n" +
+    "                                </div>\n" +
+    "                                <div class=\"col-md-1\">\n" +
+    "                                </div>\n" +
     "                            </div>\n" +
-    "                            <div class=\"col-md-1\">\n" +
-    "                            </div>\n" +
-    "                        </div>\n" +
     "\n" +
-    "                        <div class=\"row\">\n" +
-    "                            <div class=\"col-md-1\">\n" +
+    "                            <div class=\"row\">\n" +
+    "                                <div class=\"col-md-1\">\n" +
+    "                                </div>\n" +
+    "                                <div class=\"col-md-10\">\n" +
+    "                                    <alert ng-repeat=\"alert in point.commandSet.alerts\" type=\"alert.type\" close=\"point.commandSet.closeAlert($index)\" style=\"text-align: left; white-space: normal;\">{{alert.message}}</alert>\n" +
+    "                                </div>\n" +
+    "                                <div class=\"col-md-1\">\n" +
+    "                                </div>\n" +
     "                            </div>\n" +
-    "                            <div class=\"col-md-10\">\n" +
-    "                                <alert ng-repeat=\"alert in point.commandSet.alerts\" type=\"alert.type\" close=\"point.commandSet.closeAlert($index)\" style=\"text-align: left; white-space: normal;\">{{alert.message}}</alert>\n" +
-    "                            </div>\n" +
-    "                            <div class=\"col-md-1\">\n" +
-    "                            </div>\n" +
-    "                        </div>\n" +
     "\n" +
-    "                    </td>\n" +
-    "                </tr>\n" +
-    "            </tbody>\n" +
-    "        </table>\n" +
+    "                        </td>\n" +
+    "                    </tr>\n" +
+    "                    </tbody>\n" +
+    "                </table>\n" +
+    "            </div>\n" +
+    "        </div>\n" +
     "    </div>\n" +
     "\n" +
     "    <!--<div ng-include src=\"'/partials/loadingprogress.html'\"></div>-->\n" +
     "\n" +
     "    <!--<div class=\"navbar-fixed-bottom invisible\">-->\n" +
-    "        <!--<div class=\"coral-chart\" ng-repeat=\"chart in charts\">-->\n" +
-    "            <!--<div class=\"coral-win\" >-->\n" +
-    "                <!--<div class=\"coral-win-titlebar clearfix\">-->\n" +
-    "                    <!--<p class=\"coral-win-title\"><span class=\"glyphicon glyphicon-stats\" style=\"top: 0; vertical-align: top; margin-right:4px\"></span> <span>{{ chart.name }}</span></p>-->\n" +
-    "                    <!--<div class=\"coral-win-actions\">-->\n" +
+    "        <!--<div class=\"gb-chart\" ng-repeat=\"chart in charts\">-->\n" +
+    "            <!--<div class=\"gb-win\" >-->\n" +
+    "                <!--<div class=\"gb-win-titlebar clearfix\">-->\n" +
+    "                    <!--<p class=\"gb-win-title\"><span class=\"glyphicon glyphicon-stats\" style=\"top: 0; vertical-align: top; margin-right:4px\"></span> <span>{{ chart.name }}</span></p>-->\n" +
+    "                    <!--<div class=\"gb-win-actions\">-->\n" +
     "                        <!--<a href=\"\" ng-click=\"\"><i class=\"glyphicon glyphicon-minus icon-white\" style=\"margin-top: 5px\"></i></a>-->\n" +
     "                        <!--<a href=\"\" ng-click=\"chartPopout($index)\"><i class=\"glyphicon glyphicon-share-alt icon-white\"></i></a>-->\n" +
     "                        <!--<a href=\"\" ng-click=\"chartRemove($index)\"><i class=\"glyphicon glyphicon-remove icon-white\"></i></a>-->\n" +
     "                    <!--</div>-->\n" +
     "                <!--</div>-->\n" +
     "                <!--<ul class=\"nav nav-pills\" style=\"margin-bottom: 5px; font-size: 86%\">-->\n" +
-    "                    <!--<li class=\"coral-legend\" ng-repeat=\"point in chart.points\">-->\n" +
-    "                        <!--<div class=\"coral-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">-->\n" +
-    "                            <!--<span class=\"coral-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>-->\n" +
-    "                            <!--<a class=\"coral-remove\" href=\"\" ng-click=\"removePoint( chart, point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>-->\n" +
+    "                    <!--<li class=\"gb-legend\" ng-repeat=\"point in chart.points\">-->\n" +
+    "                        <!--<div class=\"gb-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">-->\n" +
+    "                            <!--<span class=\"gb-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>-->\n" +
+    "                            <!--<a class=\"gb-remove\" href=\"\" ng-click=\"removePoint( chart, point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>-->\n" +
     "                        <!--</div>-->\n" +
     "                    <!--</li>-->\n" +
     "                <!--</ul>-->\n" +
-    "                <!--<div class=\"coral-win-container\">-->\n" +
-    "                    <!--<div class=\"coral-win-content\" droppable target=\"chart\" on-drop=\"onDropPoint\">-->\n" +
+    "                <!--<div class=\"gb-win-container\">-->\n" +
+    "                    <!--<div class=\"gb-win-content\" droppable target=\"chart\" on-drop=\"onDropPoint\">-->\n" +
     "                        <!--<div chart=\"chart.traits\" data=\"chart.points\" selection=\"chart.selection\"  style=\"height: 150px\"></div>-->\n" +
     "                    <!--</div>-->\n" +
     "                <!--</div>-->\n" +

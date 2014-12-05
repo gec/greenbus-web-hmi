@@ -26,6 +26,8 @@ POST          /models/:modelId/commandlock                            controller
 DELETE        /models/:modelId/commandlock/:id                        controllers.Application.deleteCommandLock( modelId: String, id: String)
 POST          /models/:modelId/commands/:id                           controllers.Application.postCommand( modelId: String, id: String)
 
+GET           /models/:modelId/endpoints                              controllers.Application.getEndpoints( modelId: String)
+
 # Enable webjar based resources to be returned
 GET           /webjars/*file                                          controllers.WebJarAssets.at(file)
 
