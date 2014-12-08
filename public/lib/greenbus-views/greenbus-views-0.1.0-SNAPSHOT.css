@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2014-12-05
+ * Version: 0.1.0-SNAPSHOT - 2014-12-08
  * License: Apache Version 2.0
  */
 
@@ -240,12 +240,6 @@
 overflow: visible;
 }
 
-.ces-state-icon {
-  width: 29px;
-  height: 16px;
-  border: none;
-  outline: none;
-}
 .battery-soc {
   display: block;
   float: left;
@@ -292,30 +286,30 @@ overflow: visible;
   left: -4px;
   width: 60px;
   height: 100%;
-  background-image: url('../images/battery60x30.png');
+  background-image: url('/images/ess60x30.png');
 }
-.battery-discharging {
-  position: relative;
-  top: -27px;
-  left: -28px;
-  width: 14px;
-  height: 24px;
-}
-.battery-charging {
-  position: relative;
-  top: -27px;
-  left: -28px;
-  width: 14px;
-  height: 24px;
-}
-.battery-standby {
-  position: relative;
-  top: -33px;
-  left: 15px;
-  width: 24px;
-  height: 36px;
-  background-image: url('../images/standby24x36.png');
-}
+/*.battery-discharging {*/
+  /*position: relative;*/
+  /*top: -27px;*/
+  /*left: -28px;*/
+  /*width: 14px;*/
+  /*height: 24px;*/
+/*}*/
+/*.battery-charging {*/
+  /*position: relative;*/
+  /*top: -27px;*/
+  /*left: -28px;*/
+  /*width: 14px;*/
+  /*height: 24px;*/
+/*}*/
+/*.battery-standby {*/
+  /*position: relative;*/
+  /*top: -33px;*/
+  /*left: 15px;*/
+  /*width: 24px;*/
+  /*height: 36px;*/
+  /*background-image: url('../images/standby24x36.png');*/
+/*}*/
 
 .gb-table-2header > thead > tr > th {
   border-bottom: 2px solid #ddd;

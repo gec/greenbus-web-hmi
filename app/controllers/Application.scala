@@ -87,7 +87,7 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
     val subMenus = List[NavigationElement](
       NavigationItemSource( "Equipment", "equipment", "/measurements/equipment", "/models/1/equipment/$parent/descendants?depth=1", InsertLocation.CHILDREN),
       NavigationItemSource( "Solar", "solar", "/measurements/solar", "/models/1/equipment/$parent/descendants?depth=0&childTypes=PV", InsertLocation.CHILDREN),
-      NavigationItemSource( "Energy Storage", "ceses", "/ceses/", "/models/1/equipment/$parent/descendants?depth=0&childTypes=CES", InsertLocation.CHILDREN),
+      NavigationItemSource( "Energy Storage", "esses", "/esses/", "/models/1/equipment/$parent/descendants?depth=0&childTypes=CES", InsertLocation.CHILDREN),
       NavigationItemSource( "Generator", "generator", "/measurements/generator", "/models/1/equipment/$parent/descendants?depth=0&childTypes=Generator", InsertLocation.CHILDREN),
       NavigationItemSource( "Load", "load", "/measurements/load", "/models/1/equipment/$parent/descendants?depth=0&childTypes=Load", InsertLocation.CHILDREN)
     )

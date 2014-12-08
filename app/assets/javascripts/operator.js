@@ -99,8 +99,8 @@ define([
           when('/events', {templateUrl: '/partials/events.html'}).
           when('/alarms', {templateUrl: '/partials/alarms.html'}).
           when('/endpoints', {templateUrl: '/partials/endpoints.html'}).
+          when('/esses/:id', {templateUrl: '/partials/esses.html'}).
 //          when('/chart', {templateUrl: '/partials/chart.html', controller: 'ChartControl'}).
-//          when('/ceses/:id', {templateUrl: '/partials/ceses.html', controller: 'CesesControl'}).
 //          when('/entities', {templateUrl: '/partials/entities.html', controller: 'EntityControl'}).
 //          when('/entities/:id/:name', {templateUrl: '/partials/entitydetail.html', controller: 'EntityDetailControl'}).
 //          when('/points', {templateUrl: '/partials/points.html', controller: 'PointControl'}).
