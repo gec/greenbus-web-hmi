@@ -50,6 +50,11 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
     Ok(views.html.operator("GreenBus HMI Operator"))
   }
 
+  def appsChartPopout = AuthenticatedPageAction { (request, session) =>
+    Logger.debug( "Application.appsChartPopout")
+    Ok(views.html.chartPopout("GreenBus HMI Chart"))
+  }
+
   val appMenuTop = List[NavigationElement](
     NavigationItem( "GreenBus", "applications", "#/", 
       children = List[NavigationElement](

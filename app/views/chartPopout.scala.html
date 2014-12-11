@@ -1,0 +1,21 @@
+@(title: String)
+
+@main(title, routes.Assets.versioned("javascripts/chart-popout"), Some(routes.Assets.versioned("stylesheets/fullpage.css"))) {
+<!--
+<div class="statusBanner">
+    <div class="statusCenter" ng-controller="ReefStatusControl" ng-show="visible">
+        <div class="statusBlock">
+            <div class="statusBox">
+                <div class=statusText><strong>Not connected. </strong> {{status.description}}</div>
+            </div>
+        </div>
+    </div>
+</div>
+-->
+<div class="container-fluid" style="margin: 0; padding: 0">
+
+    <div ng-view></div>
+
+</div>
+
+}

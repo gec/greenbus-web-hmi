@@ -17,6 +17,10 @@
         <link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")">
 
         <link rel="stylesheet" href="@routes.Assets.versioned("stylesheets/main.css")">
+        @for( styleSheet <- customStylesheet) {
+            <link rel="stylesheet" href="@customStylesheet">
+        }
+
 
         @*<link rel="stylesheet" media="screen" href="@routes.Assets.at("stylesheets/main.css")">*@
         @*<link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/favicon.png")">*@
