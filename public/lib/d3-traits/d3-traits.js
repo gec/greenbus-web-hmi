@@ -1,4 +1,4 @@
-/*! d3-traits - v0.0.1 - 2014-11-12
+/*! d3-traits - v0.0.1 - 2014-12-12
 * https://github.com/gec/d3-traits
 * Copyright (c) 2014 d3-traits; Licensed ,  */
 (function(d3) {
@@ -4061,7 +4061,8 @@
   var chartGroupClipPathNextId = 1,
       debug = {
         layoutAxes: false,
-        resize: false
+        resize: false,
+        invalidate: false
       }
 
 
@@ -4176,14 +4177,28 @@
         return _config.colors
     }
 
+    var sizeFromElement = { width: true, height: true }
+
+    function initConfigSize() {
+      var s = new d3.trait.Size( 200, 100)
+
+      if( _config.size) {
+        if( _config.size.width) {
+          s.width = _config.size.width
+          sizeFromElement.width = false
+        }
+        if( _config.size.height) {
+          s.height = _config.size.height
+          sizeFromElement.height = false
+        }
+      }
+      return s
+    }
+
     var ease = 'cubic-in-out'
-    var sizeFromElement = true
-    var size = new d3.trait.Size(),
-        chartSize = { attrWidth: null, attrHeight: null}
-    var width = 200
-    var height = 100
-    var chartWidth = width - margin.left - margin.right,
-        chartHeight = height - margin.top - margin.bottom,
+    var size = initConfigSize()
+    var chartWidth = size.width - margin.left - margin.right,
+        chartHeight = size.height - margin.top - margin.bottom,
         colorIndexNext = 0,
         colors = getColorsFunction(),
         colorsUsed = [],
@@ -4241,15 +4256,15 @@
     }
 
 
-    function getDimension(sizeFromElement, dimension, elementOffsetDimension) {
-      if( !sizeFromElement )
+    function getDimension(dimensionFromElement, dimension, elementOffsetDimension) {
+      if( !dimensionFromElement )
         return dimension
       else
         return elementOffsetDimension;
     }
 
-    function getDimensionAttr(sizeFromElement, dimension, elementOffsetDimension, elementStyleDimension) {
-      if( !sizeFromElement )
+    function getDimensionAttr(dimensionFromElement, dimension, elementOffsetDimension, elementStyleDimension) {
+      if( !dimensionFromElement )
         return dimension
 
       if( elementStyleDimension.indexOf('%') >= 0 )
@@ -4258,26 +4273,18 @@
         return elementOffsetDimension;
     }
 
-    function getChartSizeAttrs(element, sizeFromElement, width, height) {
+    function getChartSizeAttrs(element, _sizeFromElement, _size) {
       var attrs = {}
 
-      attrs.width = getDimensionAttr(sizeFromElement, width, element.offsetWidth, element.style.width)
-      attrs.height = getDimensionAttr(sizeFromElement, height, element.offsetHeight, element.style.height)
+      attrs.width = getDimensionAttr( _sizeFromElement.width, _size.width, element.offsetWidth, element.style.width)
+      attrs.height = getDimensionAttr( _sizeFromElement.height, _size.height, element.offsetHeight, element.style.height)
       return attrs
     }
 
-    function getChartSize(element, sizeFromElement, width, height, margin) {
-      var size = new d3.trait.Size()
-
-      size.width = getDimension(sizeFromElement, width, element.offsetWidth) - margin.left - margin.right
-      size.height = getDimension(sizeFromElement, height, element.offsetHeight) - margin.top - margin.bottom
-      return size
-    }
-
-    function getSize(element, sizeFromElement, width, height) {
+    function getSize(element, _sizeFromElement, _size) {
       return new d3.trait.Size(
-        getDimension(sizeFromElement, width, element.offsetWidth),
-        getDimension(sizeFromElement, height, element.offsetHeight)
+        getDimension( _sizeFromElement.width, _size.width, element.offsetWidth),
+        getDimension( _sizeFromElement.height, _size.height, element.offsetHeight)
       )
     }
 
@@ -4285,9 +4292,8 @@
       var self = chartBase
       selection = _selection
       _selection.each(function(_data) {
-        var chartSize,
-            element = this, // the div element
-            sizeAttrs = getChartSizeAttrs(element, sizeFromElement, width, height)
+        var element = this, // the div element
+            sizeAttrs = getChartSizeAttrs(element, sizeFromElement, size)
 
         select = d3.select(element)
 
@@ -4299,9 +4305,7 @@
             .attr("height", sizeAttrs.height)
           element._svgDefs = element._svg.append("defs")
 
-          size = getSize(element, sizeFromElement, width, height)
-          width = size.width
-          height = size.height
+          size = getSize(element, sizeFromElement, size)
           chartWidth = size.width - margin.left - margin.right
           chartHeight = size.height - margin.top - margin.bottom
 
@@ -4350,11 +4354,11 @@
           })
         }
 
-        //console.log( "chartBase w=" + width + ", h=" + height + " cW=" + chartWidth + ", cH=" + chartHeight)
+        //console.log( "chartBase w=" + size.width + ", h=" + size.height + " cW=" + chartWidth + ", cH=" + chartHeight)
 
         element._svg.transition()
           .duration(duration)
-          .attr({width: width, height: height})
+          .attr({width: size.width, height: size.height})
         element._svg.select('.chart-group')
           .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
 
@@ -4534,8 +4538,8 @@
         chartWidth:  chartWidth,
         chartHeight: chartHeight
       }
-      chartWidth = Math.max( 0, width - margin.left - margin.right)
-      chartHeight = Math.max( 0, height - margin.top - margin.bottom)
+      chartWidth = Math.max( 0, size.width - margin.left - margin.right)
+      chartHeight = Math.max( 0, size.height - margin.top - margin.bottom)
       if( debug.resize)
         console.log( 'chartBase.updateChartSize() chartWidth ' + prev.chartWidth + '->' + chartWidth + ', chartHeight ' + prev.chartHeight + '->' + chartHeight + ' selection:' + (!!selection))
       if( prev.chartWidth !== chartWidth || prev.chartHeight !== chartHeight ) {
@@ -4547,12 +4551,12 @@
 
     function updateSize() {
       var prev = {
-        width:  width,
-        height: height
+        width:  size.width,
+        height: size.height
       }
-      width = chartWidth + margin.left + margin.right
-      height = chartHeight + margin.top + margin.bottom
-      if( prev.width !== width || prev.height !== height )
+      size.width = chartWidth + margin.left + margin.right
+      size.height = chartHeight + margin.top + margin.bottom
+      if( prev.width !== size.width || prev.height !== size.height )
         dispatch.chartResized()
     }
 
@@ -4560,21 +4564,23 @@
      * Remove everything that was added to element.
      */
     chartBase.remove = function() {
-      selection.each(function(_data) {
-        var element = this // the div element
+      if( selection) {
+        selection.each(function(_data) {
+          var element = this // the div element
 
-        if( element._svg ) {
-          element._svg.remove();
-          delete element._svg;
-          delete element._svgDefs;
-          delete element._container;
-          delete element._chartGroup;
-          delete element._chartGroupClipPath;
-          delete element._chartGroupClipPathRect;
-          delete element.__onFocusChangeListeners;
-          delete element.__onChartMouseOutListeners;
-        }
-      })
+          if( element._svg ) {
+            element._svg.remove();
+            delete element._svg;
+            delete element._svgDefs;
+            delete element._container;
+            delete element._chartGroup;
+            delete element._chartGroupClipPath;
+            delete element._chartGroupClipPathRect;
+            delete element.__onFocusChangeListeners;
+            delete element.__onChartMouseOutListeners;
+          }
+        })
+      }
 
     };
 
@@ -4606,7 +4612,7 @@
           }
           break;
         case 'right':
-          axisMargin = width - axes[0].rect.minX()
+          axisMargin = size.width - axes[0].rect.minX()
           if( margin.right < axisMargin ) {
             margin.right = axisMargin
             updatedMargin = true;
@@ -4621,7 +4627,7 @@
           break;
 
         case 'bottom':
-          axisMargin = height - axes[0].rect.minY()
+          axisMargin = size.height - axes[0].rect.minY()
           if( margin.bottom < axisMargin ) {
             margin.bottom = axisMargin
             updatedMargin = true;
@@ -4682,8 +4688,8 @@
           // shift the axes up against the right edge.
           updatedOrigin = updateAxesExtentsForChartMarginTop(axes)
           edge = axes[0].rect.minX()
-          if( edge > width - margin.right ) {
-            delta = width - margin.right - edge
+          if( edge > size.width - margin.right ) {
+            delta = size.width - margin.right - edge
             axes.forEach(function(axis) {
               axis.rect.origin.x += delta;
             })
@@ -4708,8 +4714,8 @@
           // If the chart's bottom margin is more than the axes height,
           // shift the axes up against the bottom edge.
           edge = axes[0].rect.minY()
-          if( edge > height - margin.bottom ) {
-            delta = height - margin.bottom - edge
+          if( edge > size.height - margin.bottom ) {
+            delta = size.height - margin.bottom - edge
             axes.forEach(function(axis) {
               axis.rect.origin.y += delta;
             })
@@ -4741,7 +4747,7 @@
     function relayoutAxes() {
       var axesWithLayoutInfo, key,
           updatedMargin = false,
-          rect = new d3.trait.Rect(0, 0, width, height),
+          rect = new d3.trait.Rect(0, 0, size.width, size.height),
           orients = [ 'left', 'right', 'top', 'bottom'],
           axesByOrient = {}
 
@@ -4767,7 +4773,7 @@
           rect = makeAxisRectWithProperAnchor(orient, widthOrHeight)
 
       if( debug.layoutAxes) {
-        console.log( 'layoutAxis( '+name+', ' + orient + ', ' + widthOrHeight + ') BEGIN width:' + width + ' height:' + height + ' margin l:' + margin.left + ' r:' + margin.right + ' t:' + margin.top + ' b:' + margin.bottom)
+        console.log( 'layoutAxis( '+name+', ' + orient + ', ' + widthOrHeight + ') BEGIN width:' + size.width + ' height:' + size.height + ' margin l:' + margin.left + ' r:' + margin.right + ' t:' + margin.top + ' b:' + margin.bottom)
         allAxesWithLayoutInfo.forEach( function(a){
           console.log( '   ' + a.name + ', ' + a.orient + ' origin:'+ a.rect.origin.x + ',' + a.rect.origin.y +' size:' + a.rect.size.width + ',' + a.rect.size.height + ' anchor:' + a.rect.anchor.x + ',' + a.rect.anchor.y)
         })
@@ -4782,7 +4788,7 @@
         relayoutAxes()
       }
       if( debug.layoutAxes) {
-        console.log( 'layoutAxis( '+name+', ' + orient + ', ' + widthOrHeight + ') END   width:' + width + ' height:' + height + ' margin l:' + margin.left + ' r:' + margin.right + ' t:' + margin.top + ' b:' + margin.bottom)
+        console.log( 'layoutAxis( '+name+', ' + orient + ', ' + widthOrHeight + ') END   width:' + size.width + ' height:' + size.height + ' margin l:' + margin.left + ' r:' + margin.right + ' t:' + margin.top + ' b:' + margin.bottom)
         allAxesWithLayoutInfo.forEach( function(a){
           console.log( '   ' + a.name + ', ' + a.orient + ' origin:'+ a.rect.origin.x + ',' + a.rect.origin.y +' size:' + a.rect.size.width + ',' + a.rect.size.height + ' anchor:' + a.rect.anchor.x + ',' + a.rect.anchor.y)
         })
@@ -4814,8 +4820,8 @@
 
     function invalidateDoUpdate( type, duration) {
       var now = Date.now()
-
-      console.log( 'invalidateDoUpdate count: ' + invalidate.count + ', timeSince: ' + (now - invalidate.lastTime))
+      if( debug.invalidate)
+        console.log( 'invalidateDoUpdate count: ' + invalidate.count + ', timeSince: ' + (now - invalidate.lastTime))
       invalidate.count = 0
       invalidate.lastTime = Date.now()
       chartBase.update( type, duration)
@@ -4882,30 +4888,30 @@
     };
 
     chartBase.size = function(_s) {
-      if( !arguments.length ) return width;
+      if( !arguments.length ) return new d3.trait.Size( size.width, size.height);
       sizeFromElement = false
-      width = parseInt(_s.width, 10);
-      height = parseInt(_s.height, 10);
+      size.width = parseInt(_s.width, 10);
+      size.height = parseInt(_s.height, 10);
       if( debug.resize)
-        console.log( 'chartBase.size( weight=' + width + ', height=' + height + ')')
+        console.log( 'chartBase.size( weight=' + size.width + ', height=' + size.height + ')')
       updateChartSize()
       return this;
     };
     chartBase.width = function(_x) {
-      if( !arguments.length ) return width;
+      if( !arguments.length ) return size.width;
       sizeFromElement = false
-      width = parseInt(_x, 10);
+      size.width = parseInt(_x, 10);
       if( debug.resize)
-        console.log( 'chartBase.width( ' + width + ')')
+        console.log( 'chartBase.width( ' + size.width + ')')
       updateChartSize()
       return this;
     };
     chartBase.height = function(_x) {
-      if( !arguments.length ) return height;
+      if( !arguments.length ) return size.height;
       sizeFromElement = false
-      height = parseInt(_x, 10);
+      size.height = parseInt(_x, 10);
       if( debug.resize)
-        console.log( 'chartBase.height( ' + height + ')')
+        console.log( 'chartBase.height( ' + size.height + ')')
       updateChartSize()
       duration = 0;
       return this;

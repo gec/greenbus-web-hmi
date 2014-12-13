@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2014-12-08
+ * Version: 0.1.0-SNAPSHOT - 2014-12-12
  * License: Apache Version 2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["template/chart/chart.html","template/chart/charts.html","template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -329,6 +329,819 @@ angular.module('greenbus.views.authentication', ['ngCookies', 'ui.bootstrap', 'u
   }]);
 
 /**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * 'License'); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.views.rest', 'greenbus.views.request']).
+
+  /**
+   * Control multiple charts. This is the controller for the charts at the bottom of the application window.
+   *
+   * Any controller that would like a new chart makes a request to this controller
+   * via request.push( 'gb-chart.addChart', points).
+   *
+   */
+  controller( 'gbChartsController', [ '$scope', '$window', 'measurement', 'rest', 'request',
+    function( $scope, $window, measurement, rest, request) {
+
+      var REQUEST_ADD_CHART = 'gb-chart.addChart',
+          historyConstraints ={
+            time: 1000 * 60 * 60 * 1, // 1 hours
+            size: 60 * 60 * 1, // 1 hours of 1 second data
+            throttling: 5000
+          }
+
+      $scope.charts = []
+
+
+      function subscribeToMeasurementHistory( chart, point ) {
+        var notify = function () { chart.update( 'trend' ) }
+
+        point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart, notify )
+      }
+
+      function unsubscribeToMeasurementHistory( chart, point ) {
+        measurement.unsubscribeWithHistory( point, chart )
+      }
+
+      $scope.onDropPoint = function ( pointId, chart ) {
+        console.log( 'onDropPoint chart=' + chart.name + ' pointId=' + pointId )
+        if( ! chart.pointExists( pointId)) {
+          var url = '/models/1/points/' + pointId
+          rest.get( url, null, $scope, function(point) {
+            chart.addPoint( point)
+            subscribeToMeasurementHistory( chart, point )
+          });
+        }
+
+      }
+
+      $scope.onDragSuccess = function ( id, chart ) {
+        console.log( 'onDragSuccess chart=' + chart.name + ' id=' + id )
+
+        $scope.$apply( function () {
+          var point = chart.getPointByid( id)
+          $scope.removePoint( chart, point, true )
+        } )
+      }
+
+      $scope.removePoint = function ( chart, point, keepSubscription ) {
+
+        chart.removePoint( point)
+        // if( ! keepSubscription)
+        unsubscribeToMeasurementHistory( chart, point );
+
+        if( chart.isEmpty()) {
+          var index = $scope.charts.indexOf( chart )
+          $scope.chartRemove( index )
+        }
+
+      }
+
+      $scope.chartRemove = function ( index ) {
+
+        var chart = $scope.charts[index]
+        chart.points.forEach( function ( point ) {
+          unsubscribeToMeasurementHistory( chart, point )
+        } )
+        $scope.charts.splice( index, 1 )
+      }
+
+      // Pop the chart out into a new browser window.
+      // The new window can access the intended chart via $window.opener.coralChart;
+      $scope.chartPopout = function ( index ) {
+
+        var chart = $scope.charts[index],
+            pointIds = chart.points.map( function( p) { return p.id}),
+            queryString = rest.queryParameterFromArrayOrString( 'pids', pointIds)
+        $window.open(
+          '/apps/chart/popout#/?' + queryString,
+          '_blank',
+          'resizeable,top=100,left=100,height=400,width=600,location=no,toolbar=no'
+        )
+
+        $scope.chartRemove( index)
+      }
+
+
+      /**
+       * Some controller requested that we add a new chart with the specified points.
+       */
+      $scope.$on( REQUEST_ADD_CHART, function() {
+        var points = request.pop( REQUEST_ADD_CHART);
+        while( points) {
+          var chart = new GBChart( points),
+              i = chart.points.length
+          $scope.charts.push( chart )
+          while( --i >= 0) {
+            subscribeToMeasurementHistory( chart, chart.points[i] )
+          }
+
+          // Is there another chart request?
+          points = request.pop( REQUEST_ADD_CHART)
+        }
+      });
+
+    }]).
+
+
+  /**
+   * Controller for a single chart (like inside the pop-out window).
+   */
+  controller( 'gbChartController', ['$scope', '$window', '$location', 'measurement', 'rest', function( $scope, $window, $location, measurement, rest) {
+
+    var queryObject = $location.search()
+    if( ! queryObject.hasOwnProperty( 'pids'))
+      return
+
+    var pointIds = angular.isArray( queryObject.pids) ? queryObject.pids : [queryObject.pids],
+        documentElement = $window.document.documentElement,
+        firstPointLoaded = false,
+        historyConstraints ={
+          time: 1000 * 60 * 60 * 4, // 4 hours
+          size: 60 * 60 * 4, // 4 hours of 1 second data
+          throttling: 5000
+        }
+
+
+    documentElement.style.overflow = 'hidden';  // firefox, chrome
+    $window.document.body.scroll = 'no'; // ie only
+
+    $scope.loading = true
+    $scope.chart = new GBChart( [], true)  // t: zoomSlider
+    console.log( 'gbChartController query params: ' + pointIds)
+
+    var url = '/models/1/points?' + rest.queryParameterFromArrayOrString( 'pids', pointIds)
+    rest.get( url, 'points', $scope, function( data) {
+      data.forEach( function( point) {
+        $scope.chart.addPoint( point)
+        subscribeToMeasurementHistory( $scope.chart, point )
+      })
+      $scope.invalidateWindow()
+    })
+
+    function notifyMeasurements() {
+      if( !firstPointLoaded) {
+        firstPointLoaded = true
+        $scope.loading = false
+        $scope.$digest()
+        $scope.chart.traits.invalidate( 'resize', 0)
+        $scope.chart.brushTraits.invalidate( 'resize', 0)
+      }
+      $scope.chart.invalidate( 'trend')
+    }
+
+    function subscribeToMeasurementHistory( chart, point) {
+      point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart, notifyMeasurements)
+    }
+
+    function unsubscribeToMeasurementHistory( chart, point) {
+      measurement.unsubscribeWithHistory( point, chart)
+    }
+
+    /**
+     * A new point was dropped on us. Add it to the chart.
+     * @param uuid
+     */
+    $scope.onDropPoint = function( pointId) {
+      console.log( 'dropPoint uuid=' + pointId)
+      // Don't add a point that we're already charting.
+      if( ! $scope.chart.pointExists( pointId)) {
+        var url = '/models/1/points/' + pointId
+        rest.get( url, null, $scope, function(point) {
+          $scope.chart.addPoint( point)
+          subscribeToMeasurementHistory( $scope.chart, point )
+        });
+        $scope.invalidateWindow()
+      }
+    }
+
+    /**
+     * One of our points was dragged away from us.
+     * @param uuid
+     * @param chart
+     */
+    $scope.onDragSuccess = function( uuid, chart) {
+      console.log( 'onDragSuccess chart=' + chart.name + ' uuid=' + uuid)
+
+      $scope.$apply(function () {
+        var point =  $scope.chart.getPointByid( uuid)
+        $scope.removePoint( point, true)
+      })
+    }
+
+    $scope.removePoint = function( point, keepSubscription) {
+      var chart = $scope.chart,
+          index = chart.points.indexOf( point);
+      chart.removePoint(point);
+      if( ! keepSubscription)
+        unsubscribeToMeasurementHistory( chart, point);
+
+      if( chart.points.length <= 0) {
+        $scope.chartRemove()
+      }
+      $scope.invalidateWindow()
+    }
+
+    $scope.chartRemove = function() {
+      $scope.chart.points.forEach( function( point) {
+        unsubscribeToMeasurementHistory( $scope.chart, point)
+      });
+      delete $scope.chart;
+    }
+
+    $window.addEventListener( 'unload', function( event) {
+      $scope.chartRemove()
+    })
+
+  }]).
+
+  directive( 'gbCharts', function(){
+    return {
+      restrict: 'E', // Element name
+      // The template HTML will replace the directive.
+      replace: true,
+      transclude: true,
+      scope: true,
+      templateUrl: 'template/chart/charts.html',
+      controller: 'gbChartsController'
+    }
+  }).
+  directive( 'gbChart', function($window, $timeout){
+
+    function getDivs( element) {
+      var gbWinChilren = element.children().eq(0).children(),
+          titlebar = gbWinChilren.eq(0),
+          labels = gbWinChilren.eq(1),
+          chartContainer = gbWinChilren.eq(2),
+          gbWinContent = chartContainer.children().eq(0),
+          gbWinContentChildren = gbWinContent.children()
+
+      return {
+        titlebar: titlebar,
+        labels: labels,
+        chartContainer: chartContainer,
+        gbWinContent: gbWinContent,
+        chartMain: gbWinContentChildren.eq(0),
+        chartBrush: gbWinContentChildren.eq(1)
+      }
+    }
+
+
+    function gbChartLink(scope, element, attrs) {
+
+      var w = angular.element($window),
+          windowSize = new d3.trait.Size( w.width(), w.height()),
+          divs = getDivs( element),
+          sizes = {
+            container: new d3.trait.Size(),
+            main: new d3.trait.Size(),
+            brush: new d3.trait.Size()
+          }
+
+      scope.getSize = function () {
+        windowSize.width = w.width()    //documentElement.clientWidth
+        windowSize.height = w.height()  //documentElement.clientHeight
+
+        var size = '' + windowSize.width + ' ' + windowSize.height
+        return size
+      };
+
+      function invalidateDo() {
+        var top = divs.chartContainer.prop('offsetTop'),
+            left = divs.chartContainer.prop('offsetLeft'),
+            newSize = new d3.trait.Size( windowSize.width - left, windowSize.height - top)
+
+        if( sizes.container.width !== newSize.width || sizes.container.height !== newSize.height) {
+          sizes.container.width = newSize.width
+          sizes.container.height = newSize.height
+          sizes.main.width = newSize.width
+          sizes.brush.width = newSize.width
+
+          if( sizes.container.height <= 150) {
+            sizes.main.height = Math.max( sizes.container.height, 20)
+            sizes.brush.width = 0
+            sizes.brush.height = 0
+          } else {
+            sizes.brush.height = Math.floor( sizes.container.height * 0.18)
+            if( sizes.brush.height < 50)
+              sizes.brush.height = 50
+            else if( sizes.brush.height > 100)
+              sizes.brush.height = 100
+            sizes.main.height = sizes.container.height - sizes.brush.height
+          }
+
+          //console.log( 'gbChart scope.watch size change main=' + sizes.main.height + ' brush=' + sizes.brush.height + ' ********************')
+
+          scope.styleMain = function () {
+            return {
+              'height': sizes.main.height + 'px',
+              'width': '100%'
+            };
+          }
+
+          scope.styleBrush = function () {
+            return {
+              'height': sizes.brush.height + 'px',
+              'width': '100%'
+            };
+          }
+
+          scope.$digest()
+          scope.chart.traits.size( sizes.main)
+          scope.chart.brushTraits.size( sizes.brush)
+
+        } else {
+          //console.log( 'gbChart scope.watch size change none')
+        }
+
+      }
+      scope.invalidateWindow = function() {
+        $timeout( invalidateDo)
+      }
+      scope.$watch(scope.getSize, function (newValue, oldValue) {
+        scope.invalidateWindow()
+      }, false)
+
+      w.bind('resize', function () {
+        scope.$apply();
+      });
+    }
+
+    return {
+      restrict: 'E', // Element name
+      // The template HTML will replace the directive.
+      replace: true,
+      transclude: true,
+      scope: true,
+      templateUrl: 'template/chart/chart.html',
+      controller: 'gbChartController',
+      link: gbChartLink
+    }
+  }).
+  directive('chart', function() {
+    return {
+      restrict: 'A',
+      scope: {
+        chart: '=',  // chart traits
+        data: '=',    // binding to data in controller
+        selection: '='    // give controller binding to d3 selection
+      },
+      link: function (scope, elem, attrs) {
+        var chartEl
+
+        chartEl = d3.select(elem[0])
+        scope.selection = chartEl.datum( scope.data)
+        scope.chart.call( scope.selection)
+        if( scope.data && scope.data.length > 0)
+          console.log( 'directive.chart chart.call scope.data[0].measurements.length=' + scope.data[0].measurements.length)
+        else
+          console.log( 'directive.chart chart.call scope.data null or length=0')
+
+        scope.update = function() {
+          //console.log( 'ReefAdmin.directives chart update')
+          scope.chart.update( 'trend')
+        }
+
+      }
+    };
+  }).
+  directive('draggable', function() {
+    // from http://blog.parkji.co.uk/2013/08/11/native-drag-and-drop-in-angularjs.html
+    return {
+      restrict: 'A',
+      scope: {
+        ident: '=',
+        source: '=?',
+        onDragSuccess: '=?'
+      },
+      link: function (scope, elem, attrs) {
+
+        var el = elem[0]
+        el.draggable = true
+
+        el.addEventListener(
+          'dragstart',
+          function(e) {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('Text', scope.ident);
+            this.classList.add('drag');
+            return false;
+          },
+          false
+        );
+
+        el.addEventListener(
+          'dragend',
+          function(e) {
+            this.classList.remove('drag');
+
+            if(e.dataTransfer.dropEffect !== 'none' && scope.onDragSuccess) {
+              scope.onDragSuccess( scope.ident, scope.source)
+            }
+
+            return false;
+          },
+          false
+        );
+
+      }
+    };
+  }).
+  directive('droppable', function() {
+    return {
+      scope: {
+        onDrop: '=',
+        target: '=?'
+      },
+      replace: false,
+      link: function(scope, element) {
+        // again we need the native object
+        var el = element[0];
+        el.addEventListener(
+          'dragover',
+          function(e) {
+            e.dataTransfer.dropEffect = 'move';
+            // allows us to drop
+            if (e.preventDefault) e.preventDefault();
+            this.classList.add('over');
+            return false;
+          },
+          false
+        )
+        el.addEventListener(
+          'dragenter',
+          function(e) {
+            this.classList.add('over');
+            return false;
+          },
+          false
+        )
+
+        el.addEventListener(
+          'dragleave',
+          function(e) {
+            this.classList.remove('over');
+            return false;
+          },
+          false
+        )
+        el.addEventListener(
+          'drop',
+          function(e) {
+            // Stops some browsers from redirecting.
+            if (e.stopPropagation) e.stopPropagation();
+
+            this.classList.remove('over');
+
+            var ident = e.dataTransfer.getData('Text');
+            scope.onDrop( ident, scope.target)
+
+            return false;
+          },
+          false
+        );
+      }
+    }
+  })
+
+
+/**
+ * Copyright 2014 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+/**
+ *
+ * @param _points  Array of points
+ * @param _brushChart Boolean True if brush chart should be created
+ */
+function GBChart( _points, _brushChart) {
+
+  var self = this
+  self.points = copyPoints( _points)
+  self.unitMap = getChartUnits( self.points )
+  self.name = makeNameFromPoints( self.points )
+  self.traits = makeChartTraits( self.unitMap )
+  self.selection = null
+  self.brushChart = _brushChart
+  self.brushTraits = _brushChart ? makeBrushTraits() : undefined
+  self.brushSelection = null
+
+  self.isEmpty = function() {
+    return self.points.length <= 0
+  }
+
+  function copyPoints( points) {
+    var newPoints = []
+    points.forEach( function( p) {
+      newPoints.push( angular.extend( {}, p))
+    })
+    return newPoints
+  }
+
+  function makeNameFromPoints( points) {
+    switch( points.length) {
+      case 0: return '...'
+      case 1: return points[0].name
+      default: return points[0].name + ', ...'
+    }
+  }
+
+  function makeChartConfig( unitMapKeys, size ) {
+    var axis,
+        config = {
+          x1: function ( d ) { return d.time; },
+          seriesData: function ( s ) { return s.measurements },
+          seriesLabel: function ( s ) { return s.uniqueName }
+        }
+
+    if( size)
+      config.size = {
+        width: size.width,
+        height: size.height
+      }
+
+    unitMapKeys.forEach( function ( key, index ) {
+      axis = 'y' + (index + 1)
+//          if( key === 'raw')
+//            config[axis] = function ( d ) { return d.value ? 1 : 0; }
+//          else
+      config[axis] = function ( d ) { return d.value; }
+    })
+    return config
+  }
+
+  function getChartUnits( points ) {
+    var units = {}
+
+    points.forEach( function ( point ) {
+      if( !units.hasOwnProperty( point.unit ) )
+        units[point.unit] = [ point]
+      else
+        units[point.unit].push( point )
+    })
+    return units
+  }
+
+  function makeChartConfigScaleX1() {
+    return self.brushChart ? {
+      axis: 'x1',
+      trend: { track: 'domain-max', domain: { interval: d3.time.hour, count: 2 } }
+    }
+      : {axis: 'x1'}
+  }
+  function makeChartTraits( unitMap, size ) {
+    var gridLines = true,
+        unitMapKeys = Object.keys( unitMap ),
+        config = makeChartConfig( unitMapKeys, size ),
+        chartTraits = d3.trait( d3.trait.chart.base, config )
+          .trait( d3.trait.scale.time, makeChartConfigScaleX1())
+
+    console.log( 'makeChartTraits unitMapKeys ' + unitMapKeys)
+    unitMapKeys.forEach( function ( unit, index ) {
+      var axis = 'y' + (index + 1),
+          filter = function ( s ) {
+            return s.unit === unit
+          },
+          orient = index === 0 ? 'left' : 'right'
+
+      var interpolate = 'step-after',
+          scaleConfig = { axis: axis, seriesFilter: filter, unit: unit }
+
+      if( unit === 'raw' || unit === 'status' || unit === '') {
+        interpolate = 'step-after'
+        scaleConfig.domainMin = 0
+        scaleConfig.domainMax = 5
+      } else {
+        scaleConfig.domainPadding = 0.05
+      }
+
+      chartTraits = chartTraits.trait( d3.trait.scale.linear, scaleConfig )
+        .trait( d3.trait.chart.line, {
+          interpolate: interpolate,
+          seriesFilter: filter,
+          yAxis: axis,
+          focus: {distance: 1000, axis: 'x'}
+        } )
+        .trait( d3.trait.axis.linear, { axis: axis, orient: orient, ticks: undefined, label: unit, gridLines: gridLines} )
+      gridLines = false
+    })
+
+    var xAxisTicks = self.brushChart ? 10 : 4
+    chartTraits = chartTraits.trait( d3.trait.axis.time.month, { axis: 'x1', ticks: xAxisTicks, gridLines: true} )
+      .trait(d3.trait.focus.crosshair, {})
+      .trait( d3.trait.focus.tooltip.unified, {
+        formatY: d3.format('.2f'),
+        formatHeader: function( d) { return 'Time: ' + moment(d).format( 'HH:mm:ss') }
+      })
+
+    self.config = config
+    return chartTraits
+  }
+
+  function makeBrushTraits( size) {
+    var brushTraits
+
+    var config = angular.extend( {}, self.config)
+    if( size)
+      config.size = {
+        width: size.width,
+        height: size.height
+      }
+
+
+    brushTraits = d3.trait( d3.trait.chart.base, config )
+      .trait( d3.trait.scale.time, { axis: 'x1'})
+      .trait( d3.trait.scale.linear, { axis: 'y1' })
+      .trait( d3.trait.chart.line, { interpolate: 'step-after' })
+      .trait( d3.trait.control.brush, { axis: 'x1', target: self.traits, targetAxis: 'x1'})
+      .trait( d3.trait.axis.time.month, { axis: 'x1', ticks: 3})
+      .trait( d3.trait.axis.linear, { axis: 'y1', extentTicks: true})
+
+    return brushTraits
+  }
+
+  self.getPointByid = function( pointId) {
+    var i, point,
+        length = self.points.length
+
+    for( i = 0; i < length; i++ ) {
+      point = self.points[i]
+      if( point.id === pointId )
+        return point
+    }
+    return null
+  }
+
+  self.pointExists = function( pointId) {
+    return self.getPointByid( pointId) != null
+  }
+
+  self.callTraits = function( ) {
+//    if( $timeout) {
+//      // Use timeout so the digest cycle can update the css width/height
+//      $timeout( function() {
+//        self.traits.call( self.selection )
+//        if( self.brushTraits)
+//          self.brushTraits.call( self.brushSelection )
+//      })
+//    } else {
+      self.traits.call( self.selection )
+      if( self.brushTraits)
+        self.brushTraits.call( self.brushSelection )
+//    }
+  }
+
+  self.addPoint = function( point) {
+    if( !point.measurements )
+      point.measurements = []
+
+    self.points.push( point );
+    delete point.__color__;
+    self.uniqueNames()
+
+    if( self.unitMap.hasOwnProperty( point.unit ) ) {
+      self.unitMap[point.unit].push( point )
+    } else {
+      self.unitMap[point.unit] = [point]
+    }
+
+    var size = self.traits.size()
+    self.traits.remove()
+    self.traits = makeChartTraits( self.unitMap, size )
+
+    size = self.brushTraits.size()
+    self.brushTraits.remove()
+    self.brushTraits = makeBrushTraits( size)
+
+    self.callTraits()
+  }
+
+  self.removePoint = function( point) {
+    if( ! point)
+      return
+
+    var index = self.points.indexOf( point );
+    self.points.splice( index, 1 );
+
+    if( self.points.length > 0 ) {
+      var pointsForUnit = self.unitMap[ point.unit]
+      index = pointsForUnit.indexOf( point )
+      pointsForUnit.splice( index, 1 )
+
+      if( pointsForUnit.length <= 0 ) {
+        delete self.unitMap[point.unit];
+        self.traits.remove()
+        self.traits = makeChartTraits( self.unitMap )
+      }
+
+      self.callTraits()
+    }
+
+    self.uniqueNames()
+  }
+
+  // typ is usually 'trend'
+  self.invalidate = function( typ, duration) {
+    if( self.brushChart)
+      self.brushTraits.invalidate( typ, duration)
+    else
+      self.traits.invalidate( typ, duration)
+  }
+
+  // typ is usually 'trend'
+  self.update = function( typ, duration) {
+    if( self.brushChart)
+      self.brushTraits.update( typ, duration)
+    else
+      self.traits.update( typ, duration)
+  }
+
+  function isSamePrefix( index, points) {
+    var prefix = points[0].name.substr( 0, index),
+        i = points.length - 1
+    while( i >= 1){
+      if( points[i].name.substr( 0, index) !== prefix)
+        return false
+      i--
+    }
+    return true
+  }
+
+  function assignUniqueName( index, points) {
+    var p,
+        i = points.length - 1
+
+    while( i >= 0){
+      p = points[i]
+      p.uniqueName = p.name.substr( index)
+      i--
+    }
+  }
+
+  self.uniqueNames = function() {
+    if( self.points.length === 0)
+      return
+    var pre,
+        n = self.points[0].name,
+        l = n.length,
+        i = n.indexOf( '.') + 1
+
+    // if not '.' or dot is too near end, return.
+    if( i < 0 || i > l - 6) {
+      assignUniqueName( 0, self.points)  // give up. Just use the whole name.
+      return
+    }
+
+    if( isSamePrefix( i, self.points))
+      assignUniqueName( i, self.points)
+
+  }
+
+  // TODO: Still see a NaN error when displaying chart before we have data back from subscription
+  self.points.forEach( function ( point ) {
+    if( !point.measurements )
+      point.measurements = [ /*{time: new Date(), value: 0}*/]
+  })
+
+  self.uniqueNames()
+
+}
+/**
  * Copyright 2013-2014 Green Energy Corp.
  *
  * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
@@ -567,12 +1380,8 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       return value
     }
 
-    function processValue( info, measurement) {
-      var value = measurement.value
-//        if( measurement.name.indexOf( 'PowerHub') >= 0)
-//            console.log( 'gbEssesController.processValue measurement ' + measurement.name + ', value:"'+measurement.value+'"' + ' info.type: ' + info.type)
-//        if( measurement.name.indexOf( 'Sunverge') >= 0)
-//            console.log( 'gbEssesController.processValue measurement ' + measurement.name + ', value:"'+measurement.value+'"' + ' info.type: ' + info.type)
+    function processValue( info, pointMeasurement) {
+      var value = pointMeasurement.value
 
       switch (info.type) {
         case '%SOC':
@@ -1288,8 +2097,8 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     }
   }]).
 
-  controller( 'gbMeasurementsController', ['$scope', '$window', '$routeParams'/*, '$filter'*/, 'rest', 'navigation', 'subscription', 'measurement', 'request', '$timeout',
-    function( $scope, $window, $routeParams,/*$filter,*/ rest, navigation, subscription, measurement, request, $timeout) {
+  controller( 'gbMeasurementsController', ['$scope', '$window', '$routeParams', 'rest', 'navigation', 'subscription', 'measurement', 'request', '$timeout',
+    function( $scope, $window, $routeParams, rest, navigation, subscription, measurement, request, $timeout) {
       var self = this
       $scope.points = []
       $scope.pointsFiltered = []
@@ -1309,17 +2118,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
 
       var navId = $routeParams.navId,
           depth = rest.queryParameterFromArrayOrString( 'depth', $routeParams.depth ),
-          equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', $routeParams.equipmentIds)//,
-//          number = $filter( 'number' )
-
-
-//      function formatMeasurementValue( value ) {
-//        if( typeof value === 'boolean' || isNaN( value ) || !isFinite( value ) ) {
-//          return value
-//        } else {
-//          return number( value )
-//        }
-//      }
+          equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', $routeParams.equipmentIds)
 
       function findPoint( id ) {
         var index = findPointIndex( id)
@@ -1382,7 +2181,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         var point = findPoint( id)
 
         if( point )
-          request.push( 'coral.request.addChart', [point])
+          request.push( 'gb-chart.addChart', [point])
         else
           console.error( 'Can\'t find point by id: ' + id)
       }
@@ -1394,7 +2193,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         } )
 
         if( points.length > 0 ) {
-          request.push( 'coral.request.addChart', points)
+          request.push( 'gb-chart.addChart', points)
         }
       }
 
@@ -1738,23 +2537,6 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
 
       function subscribeToMeasurements( pointIds) {
         measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
-
-//        subscription.subscribe(
-//          {
-//            subscribeToMeasurements: { 'pointIds': pointIds }
-//          },
-//          $scope,
-//          function ( subscriptionId, type, measurements ) {
-//            switch( type ) {
-//              case 'measurements': measurements.forEach( onPointMeasurement); break;
-//              default:
-//                console.error( 'MeasurementsController.subscribeToMeasurements unknown type: "' + type + '"' )
-//            }
-//            $scope.$digest()
-//          },
-//          function ( error, message ) {
-//          }
-//        )
       }
 
 
@@ -1816,7 +2598,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
             }
         points.forEach( function ( point ) {
           point.checked = CHECKMARK_UNCHECKED
-          point.currentMeasurement = currentMeasurement
+          point.currentMeasurement = angular.extend( {}, currentMeasurement)
           pointIds.push( point.id )
           if( typeof point.pointType !== 'string')
             console.error( '------------- point: ' + point.name + ' point.pointType "' + point.pointType + '" is empty or null.' )
@@ -3134,6 +3916,68 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
 
   }]);
+
+angular.module("template/chart/chart.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("template/chart/chart.html",
+    "<div class=\"gb-chart\" style=\"width: 100%; height: 100%; margin: 0\">\n" +
+    "    <div class=\"gb-win\" >\n" +
+    "        <div class=\"gb-win-titlebar clearfix\">\n" +
+    "            <p class=\"gb-win-title\"><span class=\"glyphicon glyphicon-stats\" style=\"top: 0; vertical-align: top; margin-right:4px\"></span> <span>{{ chart.name }}</span></p>\n" +
+    "            <div class=\"gb-win-actions\">\n" +
+    "                <a href=\"\" ng-click=\"chartRemove()\"><i class=\"glyphicon glyphicon-remove icon-white\"></i></a>\n" +
+    "            </div>\n" +
+    "        </div>\n" +
+    "        <ul class=\"nav nav-pills\" style=\"margin-bottom: 5px; font-size: 86%\">\n" +
+    "            <li class=\"gb-legend\" ng-repeat=\"point in chart.points\">\n" +
+    "                <div class=\"gb-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">\n" +
+    "                    <span class=\"gb-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>\n" +
+    "                    <a class=\"gb-remove\" href=\"\" ng-click=\"removePoint( point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>\n" +
+    "                </div>\n" +
+    "            </li>\n" +
+    "        </ul>\n" +
+    "        <div id=\"chart-container\" class=\"gb-win-container\" style=\"height: 100%\">\n" +
+    "            <!--<div class=\"gb-loading-overlay\" ng-show=\"loading\">-->\n" +
+    "                <!--<div ng-include src=\"'/partials/loadingprogress.html'\"></div>-->\n" +
+    "            <!--</div>-->\n" +
+    "            <div class=\"gb-win-content\" ng-hide=\"loading\" droppable target=\"chart\" on-drop=\"onDropPoint\">\n" +
+    "                <div chart=\"chart.traits\" data=\"chart.points\" selection=\"chart.selection\"  ng-style=\"styleMain()\"></div>\n" +
+    "                <div chart=\"chart.brushTraits\" data=\"chart.points\" selection=\"chart.brushSelection\"  ng-style=\"styleBrush()\"></div>\n" +
+    "            </div>\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "</div>\n" +
+    "");
+}]);
+
+angular.module("template/chart/charts.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("template/chart/charts.html",
+    "<div class=\"gb-chart\" ng-repeat=\"chart in charts\">\n" +
+    "    <div class=\"gb-win\" >\n" +
+    "        <div class=\"gb-win-titlebar clearfix\">\n" +
+    "            <p class=\"gb-win-title\"><span class=\"glyphicon glyphicon-stats\" style=\"top: 0; vertical-align: top; margin-right:4px\"></span> <span>{{ chart.name }}</span></p>\n" +
+    "            <div class=\"gb-win-actions\">\n" +
+    "                <a href=\"\" ng-click=\"\"><i class=\"glyphicon glyphicon-minus icon-white\" style=\"margin-top: 5px\"></i></a>\n" +
+    "                <a href=\"\" ng-click=\"chartPopout($index)\"><i class=\"glyphicon glyphicon-share-alt icon-white\"></i></a>\n" +
+    "                <a href=\"\" ng-click=\"chartRemove($index)\"><i class=\"glyphicon glyphicon-remove icon-white\"></i></a>\n" +
+    "            </div>\n" +
+    "        </div>\n" +
+    "        <ul class=\"nav nav-pills\" style=\"margin-bottom: 5px; font-size: 86%\">\n" +
+    "            <li class=\"gb-legend\" ng-repeat=\"point in chart.points\">\n" +
+    "                <div class=\"gb-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">\n" +
+    "                    <span class=\"gb-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>\n" +
+    "                    <a class=\"gb-remove\" href=\"\" ng-click=\"removePoint( chart, point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>\n" +
+    "                </div>\n" +
+    "            </li>\n" +
+    "        </ul>\n" +
+    "        <div class=\"gb-win-container\">\n" +
+    "            <div class=\"gb-win-content\" droppable target=\"chart\" on-drop=\"onDropPoint\">\n" +
+    "                <div chart=\"chart.traits\" data=\"chart.points\" selection=\"chart.selection\"  style=\"height: 150px\"></div>\n" +
+    "            </div>\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "</div>\n" +
+    "");
+}]);
 
 angular.module("template/endpoint/endpoints.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/endpoint/endpoints.html",
