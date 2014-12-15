@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2014-12-12
+ * Version: 0.1.0-SNAPSHOT - 2014-12-15
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
@@ -468,10 +468,10 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
   controller( 'gbChartController', ['$scope', '$window', '$location', 'measurement', 'rest', function( $scope, $window, $location, measurement, rest) {
 
     var queryObject = $location.search()
-    if( ! queryObject.hasOwnProperty( 'pids'))
-      return
 
-    var pointIds = angular.isArray( queryObject.pids) ? queryObject.pids : [queryObject.pids],
+    var pointIds = ! queryObject.hasOwnProperty( 'pids') ? []
+          : angular.isArray( queryObject.pids) ? queryObject.pids
+          : [queryObject.pids],
         documentElement = $window.document.documentElement,
         firstPointLoaded = false,
         historyConstraints ={
@@ -488,14 +488,16 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
     $scope.chart = new GBChart( [], true)  // t: zoomSlider
     console.log( 'gbChartController query params: ' + pointIds)
 
-    var url = '/models/1/points?' + rest.queryParameterFromArrayOrString( 'pids', pointIds)
-    rest.get( url, 'points', $scope, function( data) {
-      data.forEach( function( point) {
-        $scope.chart.addPoint( point)
-        subscribeToMeasurementHistory( $scope.chart, point )
+    if( pointIds.length > 0) {
+      var url = '/models/1/points?' + rest.queryParameterFromArrayOrString( 'pids', pointIds)
+      rest.get( url, 'points', $scope, function( data) {
+        data.forEach( function( point) {
+          $scope.chart.addPoint( point)
+          subscribeToMeasurementHistory( $scope.chart, point )
+        })
+        $scope.invalidateWindow()
       })
-      $scope.invalidateWindow()
-    })
+    }
 
     function notifyMeasurements() {
       if( !firstPointLoaded) {
@@ -584,7 +586,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       controller: 'gbChartsController'
     }
   }).
-  directive( 'gbChart', function($window, $timeout){
+  directive( 'gbChart', [ '$window', '$timeout', 'gbChartDivSize', function($window, $timeout, gbChartDivSize){
 
     function getDivs( element) {
       var gbWinChilren = element.children().eq(0).children(),
@@ -608,7 +610,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
     function gbChartLink(scope, element, attrs) {
 
       var w = angular.element($window),
-          windowSize = new d3.trait.Size( w.width(), w.height()),
+          windowSize = new d3.trait.Size( gbChartDivSize.width(), gbChartDivSize.height()),
           divs = getDivs( element),
           sizes = {
             container: new d3.trait.Size(),
@@ -617,8 +619,8 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
           }
 
       scope.getSize = function () {
-        windowSize.width = w.width()    //documentElement.clientWidth
-        windowSize.height = w.height()  //documentElement.clientHeight
+        windowSize.width = gbChartDivSize.width()    //documentElement.clientWidth
+        windowSize.height = gbChartDivSize.height()  //documentElement.clientHeight
 
         var size = '' + windowSize.width + ' ' + windowSize.height
         return size
@@ -695,7 +697,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       controller: 'gbChartController',
       link: gbChartLink
     }
-  }).
+  }]).
   directive('chart', function() {
     return {
       restrict: 'A',
@@ -820,7 +822,25 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
         );
       }
     }
-  })
+  }).
+
+  factory('gbChartDivSize', ['$window', function( $window) {
+    var w = angular.element($window),
+        getWidth =  (typeof w.width === 'function') ?
+          function() { return w.width()}
+          : function() { return w.prop('innerWidth')},
+        getHeight =  (typeof w.height === 'function') ?
+          function() { return w.height() }
+          : function() { return w.prop('innerHeight')}
+    /**
+     * Public API
+     */
+    return {
+      width: function () { return getWidth()},
+      height: function () { return getHeight()}
+    }
+  }])
+
 
 
 /**
