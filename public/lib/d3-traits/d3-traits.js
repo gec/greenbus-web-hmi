@@ -1,4 +1,4 @@
-/*! d3-traits - v0.0.1 - 2014-12-12
+/*! d3-traits - v0.0.1 - 2014-12-15
 * https://github.com/gec/d3-traits
 * Copyright (c) 2014 d3-traits; Licensed ,  */
 (function(d3) {
@@ -2079,6 +2079,10 @@
       }
     }
 
+    murtsDataStore.isMurtsDataStore = function() {
+      return true
+    }
+
     return murtsDataStore;
 
   }
@@ -2325,7 +2329,7 @@
   }
 
   function isMurtsDataStore( obj) {
-    return typeof obj === 'function' && obj.toString().indexOf( 'function murtsDataStore(') === 0
+    return typeof obj === 'function' && obj.hasOwnProperty( 'isMurtsDataStore') && obj.isMurtsDataStore()
 
 //    var arr = obj.toString().match(/function\s*(\w+)/)
 //    return arr && arr.length === 2 && arr[1] === 'murtsDataStore'
