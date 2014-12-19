@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2014-12-15
+ * Version: 0.1.0-SNAPSHOT - 2014-12-19
  * License: Apache Version 2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["template/chart/chart.html","template/chart/charts.html","template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["template/chart/chart.html","template/chart/charts.html","template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html","template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -1661,29 +1661,169 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
 
 
-angular.module('greenbus.views.event', ['greenbus.views.subscription']).
+angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.subscription']).
 
-  controller('gbAlarmsController', ['$scope', '$attrs', 'subscription', function( $scope, $attrs, subscription) {
+  controller('gbAlarmsController', ['$scope', '$attrs', 'rest', 'subscription', function( $scope, $attrs, rest, subscription) {
     $scope.loading = true
     $scope.alarms = []
+//    $scope.alarmsFiltered = []
     $scope.limit = Number( $attrs.limit || 20);
+    $scope.selectAllState = 0
+    $scope.searchText = ''
 
+    var alarmIdMap = {}
+
+
+    function findById( id ) {
+      var i, item,
+          length = $scope.alarms.length
+
+      for( i = 0; i < length; i++ ) {
+        item = $scope.alarms[i]
+        if( item.id === id )
+          return item
+      }
+      return undefined
+    }
+
+    function sortByTime() {
+      $scope.alarms.sort( function( a, b) { return b.event.time - a.event.time})
+    }
+
+    // alarm can be an array or one alarm.
+    //
     function onAlarm( subscriptionId, type, alarm) {
+      var existing
+
       if( angular.isArray( alarm)) {
+        var newAlarms = []
         console.log( 'alarmService onAlarm length=' + alarm.length)
-        $scope.alarms = alarm.concat( $scope.alarms)
+        alarm.forEach( function( a) {
+          a.updateState = 'none'
+          existing = alarmIdMap[a.id]
+          if( existing)
+            onUpdate( existing, a)
+          else {
+            newAlarms.push( a)
+            alarmIdMap[a.id] = a
+          }
+        })
+        $scope.alarms = newAlarms.concat( $scope.alarms)
       } else {
         console.log( 'alarmService onAlarm ' + alarm.id + ' "' + alarm.state + '"' + ' "' + alarm.event.message + '"')
-        $scope.alarms.unshift( alarm)
+        alarm.updateState = 'none'
+        existing = alarmIdMap[alarm.id]
+        if( existing)
+          onUpdate( existing, alarm)
+        else {
+          $scope.alarms.unshift( alarm)
+          alarmIdMap[alarm.id] = alarm
+        }
       }
-      while( $scope.alarms.length > $scope.limit)
-        $scope.alarms.pop()
+
+      while( $scope.alarms.length > $scope.limit) {
+        var removed = $scope.alarms.pop();
+        delete alarmIdMap[removed.id];
+      }
+
+      sortByTime()
+
       $scope.loading = false
       $scope.$digest()
     }
 
     function onError( error, message) {
+      console.error( 'gbAlarmsController.onError ' + error + ', message: ' + message)
 
+    }
+
+    function onUpdate( alarm, update) {
+      if( alarm) {
+
+        if( update.state === 'REMOVED') {
+          var i = $scope.alarms.indexOf( alarm)
+          if( i >= 0)
+            $scope.alarms.splice( i, 1);
+          delete alarmIdMap[alarm.id];
+        } else {
+          alarm.state = update.state
+          alarm.event = update.event
+          alarm.updateState = 'none'
+        }
+      }
+    }
+    function onUpdates( alarms) {
+      alarms.forEach( function( a) {
+        onUpdate( findById( a.id), a)
+      })
+      sortByTime()
+    }
+
+    function updateRequest( ids, newState) {
+      if( ! ids || ids.length === 0)
+        return
+
+      var arg = {
+        state: newState,
+        ids: ids
+      }
+      rest.post( '/models/1/alarms', arg, null, $scope,
+        function( alarms) {
+          onUpdates( alarms)
+        },
+        function( ex, statusCode, headers, config) {
+          console.log( 'gbAlarmsController.updateRequest ERROR updating alarms with ids: ' + ids.join() + ' to state "' + newState + '". Exception: ' + ex.exception + ' - ' + ex.message)
+        }
+      )
+    }
+
+    $scope.silence = function( alarm) {
+      if( alarm.state === 'UNACK_AUDIBLE') {
+        alarm.updateState = 'updating' // TODO: what if already updating?
+        updateRequest( [alarm.id], 'UNACK_SILENT')
+      }
+    }
+
+    $scope.acknowledge = function( alarm) {
+      if( alarm.state === 'UNACK_AUDIBLE' || alarm.state === 'UNACK_SILENT') {
+        updateRequest( [alarm.id], 'ACKNOWLEDGED')
+        alarm.updateState = 'updating' // TODO: what if already updating?
+      }
+    }
+
+    function isSelectedAndUnackAudible( alarm) {
+      return alarm.checked && alarm.state === 'UNACK_AUDIBLE'
+    }
+    function isSelectedAndUnack( alarm) {
+      return alarm.checked && ( alarm.state === 'UNACK_AUDIBLE' || alarm.state === 'UNACK_SILENT')
+    }
+    function isSelectedAndNotRemoving( alarm) {
+      return alarm.checked && alarm.state !== 'REMOVED' && alarm.updateState !== 'removing'
+    }
+    function getId( alarm) { return alarm.id }
+
+    function updateSelected( filter, newState, newUpdateState) {
+      var selected = $scope.alarms.filter( filter),
+          ids = selected.map( getId)
+      selected.forEach( function( a) { a.updateState = newUpdateState})
+      updateRequest( ids, newState)
+    }
+    $scope.silenceSelected = function() { updateSelected( isSelectedAndUnackAudible, 'UNACK_SILENT', 'updating') }
+    $scope.acknowledgeSelected = function() { updateSelected( isSelectedAndUnack, 'ACKNOWLEDGED', 'updating') }
+    $scope.removeSelected = function() { updateSelected( isSelectedAndNotRemoving, 'REMOVED', 'removing') }
+//    $scope.hitIt = function() {
+//      var selected = $scope.alarms.filter( isSelectedAndUnack),
+//          ids = selected.map( getId),
+//          newState = 'ACKNOWLEDGED'
+//      ids.push( '1234567890')
+//      selected.forEach( function( a) { a.updateState = 'updating'})
+//      updateRequest( ids, newState)
+//    }
+
+    // Called by selection
+    $scope.selectAllChanged = function( state) {
+      $scope.selectAllState = state
+      return state
     }
 
     var request = {
@@ -1767,7 +1907,59 @@ angular.module('greenbus.views.event', ['greenbus.views.subscription']).
       templateUrl: 'template/event/events.html',
       controller: 'gbEventsController'
     }
-  });
+  }).
+
+  filter('alarmStateClass', function() {
+    return function(state, updateState) {
+      var s
+      switch( state) {
+        case 'UNACK_AUDIBLE': s = 'fa fa-bell gb-alarm-unack'; break;
+        case 'UNACK_SILENT': s = 'fa fa-bell gb-alarm-unack'; break;
+        case 'ACKNOWLEDGED': s = 'fa fa-bell-slash-o  gb-alarm-ack'; break;
+        case 'REMOVED': s = 'fa fa-trash-o  gb-alarm-ack'; break;
+        default: s = 'fa fa-question-circle gb-alarm-unack'; break;
+      }
+
+      if( updateState !== 'none')
+        s += ' fa-spin'
+      return s
+    };
+  }).
+  filter('alarmStateTitle', function() {
+    return function(state) {
+      switch( state) {
+        case 'UNACK_AUDIBLE': return 'Unacknowledged audible'
+        case 'UNACK_SILENT': return 'Unacknowledged'
+        case 'ACKNOWLEDGED': return 'Acknowledged'
+        case 'REMOVED': return 'Removed'
+        default: return 'Unknown state: ' + state
+      }
+    };
+  }).
+
+  filter('alarmAudibleClass', function() {
+    return function(state) {
+      switch( state) {
+        case 'UNACK_AUDIBLE': return 'fa fa-volume-up gb-alarm-unack'
+        case 'UNACK_SILENT': return 'fa'
+        case 'ACKNOWLEDGED': return 'fa'
+        case 'REMOVED': return 'fa'
+        default: return 'fa fa-question-circle gb-alarm-unack'
+      }
+    };
+  }).
+  filter('alarmAudibleTitle', function() {
+    return function(state) {
+      switch( state) {
+        case 'UNACK_AUDIBLE': return 'Unacknowledged audible'
+        case 'UNACK_SILENT': return 'Unacknowledged'
+        case 'ACKNOWLEDGED': return 'Acknowledged'
+        case 'REMOVED': return 'Removed'
+        default: return 'Unknown state: ' + state
+      }
+    };
+  })
+;
 
 
 /**
@@ -3626,6 +3818,111 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
 
 /**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+
+angular.module('greenbus.views.selection', []).
+
+  controller( 'gbSelectAllController', ['$scope', function( $scope) {
+    var self = this
+    var SELECT_UNCHECKED = 0,
+        SELECT_CHECKED = 1,
+        SELECT_PARTIAL = 2,
+        SELECT_NEXT_STATE = [1, 0, 0]
+    $scope.selectAllState = SELECT_UNCHECKED
+    $scope.selectCount = 0
+
+
+    self.selectItem = function(item) {
+      item.checked = item.hasOwnProperty( 'checked') ? SELECT_NEXT_STATE[ item.checked] : SELECT_CHECKED
+      if( item.checked === SELECT_CHECKED )
+        $scope.selectCount++
+      else
+        $scope.selectCount--
+
+      var oldSelectAllState = $scope.selectAllState
+      if( $scope.selectCount === 0 )
+        $scope.selectAllState = SELECT_UNCHECKED
+      else if( $scope.selectCount >= $scope.model.length )
+        $scope.selectAllState = SELECT_CHECKED
+      else
+        $scope.selectAllState = SELECT_PARTIAL
+
+      if( $scope.selectAllState !== oldSelectAllState)
+        self.notifyParent( $scope.selectAllState)
+    }
+
+    $scope.selectAll = function() {
+      $scope.selectAllState = SELECT_NEXT_STATE[ $scope.selectAllState]
+      // if check, check visible. If uncheck, uncheck all.
+//      var ps = $scope.selectAllState === SELECT_CHECKED ? $scope.pointsFiltered : $scope.model
+      var ps =$scope.model
+      var i = ps.length - 1
+      $scope.selectCount = $scope.selectAllState === SELECT_CHECKED ? i : 0
+      for( ; i >= 0; i-- ) {
+        var item = ps[ i]
+        item.checked = $scope.selectAllState
+      }
+      self.notifyParent( $scope.selectAllState)
+    }
+
+  }]).
+
+  directive( 'gbSelectAll', function(){
+    return {
+      restrict: 'E', // Element name
+      // The template HTML will replace the directive.
+      replace: true,
+      transclude: true,
+      scope: {
+             model  : '=',
+             notify: '&'
+      },
+      templateUrl: 'template/selection/selectAll.html',
+      controller: 'gbSelectAllController',
+      link: function(scope, element, attrs, controller) {
+        var selectItem = attrs.selectItem || 'selectItem'
+        scope.$parent[selectItem] = controller.selectItem
+        controller.notifyParent = function( state) {
+          scope.notify( {state: state})
+        }
+      }
+    }
+  }).
+
+  filter('selectItemClass', function() {
+    return function(checked) {
+      switch( checked) {
+        case 0: return 'fa fa-square-o text-muted'
+        case 1: return 'fa fa-check-square-o'
+        case 2: return 'fa fa-minus-square-o'
+        default: return 'fa fa-square-o'
+      }
+    };
+  })
+
+
+
+
+/**
 * Copyright 2013-2014 Green Energy Corp.
 *
 * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
@@ -4092,12 +4389,43 @@ angular.module("template/ess/esses.html", []).run(["$templateCache", function($t
 angular.module("template/event/alarms.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("template/event/alarms.html",
     "<div>\n" +
-    "    <h3>Alarms</h3>\n" +
+    "    <!--<div class=\"row\">-->\n" +
+    "        <!--<div class=\"col-md-12\">-->\n" +
+    "            <!--<input type=\"text\"  class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">-->\n" +
+    "        <!--</div>-->\n" +
+    "    <!--</div>-->\n" +
+    "\n" +
+    "    <div class=\"row\">\n" +
+    "        <div class=\"col-md-5\">\n" +
+    "            <h3>Alarms</h3>\n" +
+    "        </div>\n" +
+    "        <!--<div class=\"col-md-7\">-->\n" +
+    "            <!--<input type=\"text\"  class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">-->\n" +
+    "        <!--</div>-->\n" +
+    "    </div>\n" +
+    "    <div class=\"row\">\n" +
+    "        <div class=\"col-md-1\">\n" +
+    "            <gb-select-all model=\"alarms\" notify=\"selectAllChanged(state)\"></gb-select-all>\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-11\">\n" +
+    "            <div class=\"btn-group gb-toolbar\" ng-show=\"selectAllState!==0\" role=\"group\"  style-=\"margin-left: 1.2em;\">\n" +
+    "                <button class=\"btn btn-default\" ng-click=\"silenceSelected()\" style=\"width: 60px;\" title=\"Silence selected alarms\"><i class=\"fa fa-volume-off\" style=\"font-size: 124%;\"></i></button>\n" +
+    "                <button class=\"btn btn-default\" ng-click=\"acknowledgeSelected()\" style=\"width: 60px;\" title=\"Acknowledge selected alarms\"><i class=\"fa fa-bell-slash-o\"></i></button>\n" +
+    "                <!--<button class=\"btn btn-default\" ng-click=\"hitIt()\" style=\"width: 60px;\" title=\"Hit it with something special!\"><i class=\"fa fa-bolt\"></i></button>-->\n" +
+    "            </div>\n" +
+    "            <div class=\"btn-group gb-toolbar\" ng-show=\"selectAllState!==0\" role=\"group\"  style-=\"margin-left: 1.2em;\">\n" +
+    "                <button class=\"btn btn-default\" ng-click=\"removeSelected()\" style=\"width: 60px;\" title=\"Remove selected alarms\"><i class=\"fa fa-trash-o\"></i></button>\n" +
+    "            </div>\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "\n" +
     "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
     "        <table class=\"table table-condensed\">\n" +
     "            <thead>\n" +
     "            <tr>\n" +
-    "                <th>State</th>\n" +
+    "                <th></th>\n" +
+    "                <th><i class=\"fa fa-bell\"></i></th>\n" +
+    "                <th><i class=\"fa fa-volume-off\" style=\"font-size: 125%;\"></i></th>\n" +
     "                <th>Type</th>\n" +
     "                <th>Sev</th>\n" +
     "                <th>User</th>\n" +
@@ -4106,8 +4434,14 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "            </tr>\n" +
     "            </thead>\n" +
     "            <tbody>\n" +
-    "            <tr ng-repeat=\"alarm in alarms\">\n" +
-    "                <td>{{alarm.state}}</td>\n" +
+    "            <tr class=\"gb-alarm\" ng-repeat=\"alarm in alarms\">\n" +
+    "                <td>\n" +
+    "                    <div class=\"gb-checkbox-container\" ng-click=\"selectItem(alarm)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "                        <i ng-class=\"alarm.checked | selectItemClass\"></i>\n" +
+    "                    </div>\n" +
+    "                </td>\n" +
+    "                <td ng-click=\"acknowledge(alarm)\"><i ng-class=\"alarm.state | alarmStateClass: alarm.updateState\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmStateTitle}}\"></i></td>\n" +
+    "                <td ng-click=\"silence(alarm)\"><i ng-class=\"alarm.state | alarmAudibleClass\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmAudibleTitle}}\"></i></td>\n" +
     "                <td>{{alarm.event.eventType}}</td>\n" +
     "                <td>{{alarm.event.severity}}</td>\n" +
     "                <td>{{alarm.event.agent}}</td>\n" +
@@ -4196,11 +4530,7 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
     "                        <td ng-if=\"!point.rowDetail\">\n" +
     "                            <div class=\"gb-checkbox-container\" ng-click=\"checkUncheck(point)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
     "                                <i ng-class=\"point.checked | checkboxClass\"></i>\n" +
-    "                                <!--<div ng-class=\"point.checked | checkboxClass\"></div>-->\n" +
     "                            </div>\n" +
-    "                            <!--<div id=\":2e\" class=\"oZ-jc T-Jo J-J5-Ji T-Jo-Jp\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">-->\n" +
-    "                            <!--<div class=\"T-Jo-auh\"></div>-->\n" +
-    "                            <!--</div>-->\n" +
     "                        </td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">\n" +
     "                            <div class=\"gb-icon-text draggable\" draggable ident=\"point.id\">\n" +
@@ -4210,7 +4540,6 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
     "                        </td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" style=\"text-align: right\">\n" +
     "                            <a href=\"\" ng-click=\"chartAddPointById(point.id)\"><span class=\"glyphicon glyphicon-stats text-muted\" title=\"Graph measurements\"></span></a>\n" +
-    "                            <!--<i class=\"fa fa-refresh fa-spin\"></i>-->\n" +
     "                        </td>\n" +
     "                        <td  ng-if=\"!point.rowDetail\" class=\"gb-value\" ng-click=\"togglePointRowById(point.id)\">\n" +
     "                            <span class=\"glyphicon glyphicon-edit pull-left text-muted\" style=\"padding-right: 10px; opacity: {{ point.commandSet ? 1 : 0 }}\" title=\"Control or Setpoint\"></span>\n" +
@@ -4359,4 +4688,14 @@ angular.module("template/navigation/navList.html", []).run(["$templateCache", fu
     "        <span ng-switch-when=\"header\">{{ item.label }}</span>\n" +
     "    </li>\n" +
     "</ul>");
+}]);
+
+angular.module("template/selection/selectAll.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("template/selection/selectAll.html",
+    "<button class=\"btn btn-default\" ng-click=\"selectAll()\">\n" +
+    "    <div class=\"gb-checkbox-container\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "        <i ng-class=\"selectAllState | selectItemClass\"></i>\n" +
+    "    </div>\n" +
+    "</button>\n" +
+    "");
 }]);
