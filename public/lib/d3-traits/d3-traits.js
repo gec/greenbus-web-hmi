@@ -1,6 +1,6 @@
-/*! d3-traits - v0.0.1 - 2014-12-15
+/*! d3-traits - v0.0.1 - 2015-01-08
 * https://github.com/gec/d3-traits
-* Copyright (c) 2014 d3-traits; Licensed ,  */
+* Copyright (c) 2015 d3-traits; Licensed ,  */
 (function(d3) {
 
 //    var a, b, c, d, e
@@ -1763,20 +1763,29 @@
     if( length <= 2) {
       saveLength = length
       this.initialSample( source)
-      return this.data.length - saveLength
+      return {
+        pushedCount: this.data.length,
+        poppedCount: saveLength,
+        initialSample: true
+      }
     }
 
     var stepStart = this.resampling.nextStep - this.stepSize
     var sourceIndex = this.findIndexOfStepStartFromEnd( source.data, stepStart, this.resampling.unsampledCount)
     var sampledIndex = this.findIndexOfStepStartFromEnd( this.data, stepStart)
+    var poppedCount = length - sampledIndex
 
     // Remove the last points that need to be resampled.
-    this.data.splice( sampledIndex, length - sampledIndex)
+    this.data.splice( sampledIndex, poppedCount)
 
     if( this.data.length <= 2) {
       saveLength = length
       this.initialSample( source)
-      return this.data.length - saveLength
+      return {
+        pushedCount: this.data.length,
+        poppedCount: saveLength,
+        initialSample: true
+      }
     }
 
     var a = this.data[this.data.length-1],
@@ -1802,16 +1811,21 @@
 
     this.extendNextStepPastExtent()
 
-    return pushedCount
+    return {
+      pushedCount: pushedCount,
+      poppedCount: poppedCount,
+      initialSample: false
+    }
   }
 
   /**
-   * This source has more data. Consider resampling source now.
+   * Our source has been updated. It could have recieved addition points, resampled, or both.
+   * We ALWAYS want the latest points even if they are not the complete step. We'll copy them from
+   * source for now. When we do have a complete step (by seeing a point that crosses the nextStep),
+   * then we resample.
    *
    *  | .  .| .. | .. l   |NS n    Sample to nextStep
-   *  | .  .| .. |    l   |NS n    Sample to nextStep
-   *  | .  .| .. | .. l n |NS      Don't sample
-   *  | .  .| .. |    l n |NS      Don't sample
+   *  | .  .| .. | .. l n |NS      Don't sample, just copy
    *
    *  | - step boundary
    *  |NS - nextStep
@@ -1819,32 +1833,59 @@
    *  l - Last point
    *  n - New point
    *
-   * @param count
+   * @param pushedCount The number of points the source just pushed
+   * @param poppedCount The source resampled. It popped this number of points before pushing the resampled points
+   * @param initialSample The source popped all points and performed an initial sampling. Popped and pushed counts are accurate.
    */
-  Sampling.prototype.sourceUpdated = function( pushedCount) {
-    if( pushedCount <= 0)
+  Sampling.prototype.sourceUpdated = function( pushedCount, poppedCount, initialSample) {
+    if( poppedCount === undefined)
+      poppedCount = 0
+    if( initialSample === undefined)
+      initialSample = false
+
+    if( poppedCount + pushedCount === 0)
       return
 
-    var source = this.resampling.source,
-        thisPushedCount = 0
+    var source = this.resampling.source
+    if( ! source) {
+      console.error( 'Sampling.sourceUpdated this.resampling.source is unknown: ' + source)
+      return
+    }
 
-    if( this.nextResolution.higher === source) {
-      this.resampling.unsampledCount += pushedCount
+    var update = {
+      pushedCount: pushedCount,
+      poppedCount: poppedCount,
+      initialSample: initialSample
+    }
 
-      // if source's latest point is beyond our nextStep
-      if( source && source.extents && source.extents.x.values[1] >= this.resampling.nextStep) {
-        thisPushedCount = this.sampleUpdatesFromSource()
+    if( this.nextResolution.higher === source && ! initialSample) {
+      this.resampling.unsampledCount += pushedCount - poppedCount
+
+      if( source.extents && source.extents.x.values[1] >= this.resampling.nextStep) {
+        // The source's latest point is beyond our nextStep
+        update = this.sampleUpdatesFromSource()
+      } else {
+        // The source's latest points are within our current step. We'll copy then for now and resample later.
+        var pushedData = source.data.slice( source.data.length - pushedCount)
+        if( poppedCount > 0) // if the source threw some away because of resampling, we need to follow suit
+          this.data.splice( this.data.length - poppedCount, poppedCount)
+        this.data = this.data.concat( pushedData)
+        this.extents.x.union(source.extents.x)
+        this.extents.y.union(source.extents.y)
       }
 
     } else {
+      // The source did a complete initial sampling or we have a new source resolution.
+      update.poppedCount = this.data.length
       this.initialSample( this.nextResolution.higher)
-      thisPushedCount = this.data.length
+      update.pushedCount = this.data.length
+      update.initialSample = true
     }
 
-    if( thisPushedCount > 0) {
+    if( update.poppedCount + update.pushedCount > 0) {
       this.notify( 'update')
       if( this.nextResolution.lower)
-        this.nextResolution.lower.sourceUpdated( thisPushedCount)
+        this.nextResolution.lower.sourceUpdated( update.pushedCount, update.poppedCount, update.initialSample)
     }
 
   }
@@ -2402,7 +2443,7 @@
 
       var translateX = rangeTranslate(lastDomainMax, domain, scale)
 
-      if( translateX !== 0 ) {
+      if( translateX < 1.5 ) {
 
         series.attr("transform", null)
         series.selectAll("path")
@@ -4206,7 +4247,7 @@
         colorIndexNext = 0,
         colors = getColorsFunction(),
         colorsUsed = [],
-        externalListeners = {},  // subscribption listeners here or on each element.
+        externalListeners = {},  // subscription listeners here or on each element.
         invalidate = {
           lastTime: 0,
           timer: undefined
@@ -5083,59 +5124,15 @@
     var group, series, filteredData, lastDomainMax,
         axes = trait.config.axes( _config),
         access = trait.config.accessorsXY( _config, axes),
-        x1 = _super[axes.x](),
+        x = _super[axes.x](),
         y = _super[axes.y](),
         focusConfig = d3.trait.focus.utils.makeConfig(_config),
+        interpolate = _config.interpolate || 'linear',
+        trend = _config.trend && ( interpolate === 'linear' || interpolate === 'step-after' ),
         line = d3.svg.line()
-          .interpolate(_config.interpolate || "linear")
-          .x(function(d) { return x1(access.x(d)); })
+          .interpolate( interpolate)
+          .x(function(d) { return x(access.x(d)); })
           .y(function(d) { return y(access.y(d)); });
-
-    function chartLine(_selection) {
-      var self = chartLine
-
-      _selection.each(function(_data) {
-
-        if( !group ) {
-          var classes = _config.chartClass ? "chart-line " + _config.chartClass : 'chart-line'
-          group = this._chartGroup.append('g').classed(classes, true);
-        }
-
-        filteredData = _config.seriesFilter ? _data.filter(_config.seriesFilter) : _data
-
-        // DATA JOIN
-        series = group.selectAll(".series")
-          .data(filteredData)
-
-        // UPDATE
-        series.selectAll("path")
-          .transition()
-          .duration(500)
-          .attr("d", function(d) {
-            return line(getDataInRange(_config.seriesData(d), x1, _config.x1));
-          })
-
-        // ENTER
-        series.enter()
-          .append("g")
-          .attr("class", "series")
-          .append("path")
-          .attr("class", "line")
-          .attr("d", function(d) { return line(_config.seriesData(d)); })
-          .style("stroke", self.color);
-
-        // EXIT
-        series.exit()
-          .transition()
-          .style({opacity: 0})
-          .remove();
-
-        // Leave lastDomainMax == undefined if chart starts with no data.
-
-        if( d3.trait.utils.isData(filteredData, _config.seriesData) )
-          lastDomainMax = d3.trait.utils.extentMax(x1.domain())
-      })
-    }
 
     function findClosestIndex(data, access, target, direction, minIndex, maxIndex) {
 
@@ -5168,31 +5165,102 @@
         return maxIndex + direction >= data.length ? data.length - 1 : maxIndex + direction
     }
 
-    function getDataInRange(series, scale, access) {
-      var indexMin, indexMax, data,
-          range = scale.range(),
+//    function getDataInRange(seriesData, scale, access) {
+//      var indexMin, indexMax,
+//          range = scale.range(),
+//          rangeMax = d3.trait.utils.extentMax(range),
+//          domainMin = scale.invert(range[0]),
+//          domainMax = scale.invert(rangeMax)
+//
+//      seriesData = trait.murts.utils.getOrElse( seriesData, scale)
+//
+//      indexMin = findClosestIndex(seriesData, access, domainMin, -1)
+//      indexMax = findClosestIndex(seriesData, access, domainMax, 1, indexMin, seriesData.length - 1)
+//      indexMax++ // because slice doesn't include max
+//
+//      return seriesData.slice(indexMin, indexMax)
+//    }
+
+    function makeLine( d) {
+
+      var indexMin, indexMax, indexMaxIsTheLastPoint, attrD,
+          range = x.range(),
           rangeMax = d3.trait.utils.extentMax(range),
-          domainMin = scale.invert(range[0]),
-          domainMax = scale.invert(rangeMax)
+          domainMin = x.invert ? x.invert(range[0]) : 0,  // ordinal scale doesn't have invert.
+          domainMax = x.invert ? x.invert(rangeMax) : range.length - 1,
+          seriesData = _config.seriesData(d)
 
-      data = trait.murts.utils.getOrElse( series, scale)
-      //console.log( 'chartLine: getDataInRange: data.length: ' + data.length + ' res: ' + scale.resolution())
+      seriesData = trait.murts.utils.getOrElse( seriesData, x)
 
-      indexMin = findClosestIndex(data, access, domainMin, -1)
-      indexMax = findClosestIndex(data, access, domainMax, 1, indexMin, data.length - 1)
-      indexMax++ // because slice doesn't include max
+      indexMin = findClosestIndex(seriesData, access.x, domainMin, -1)
+      indexMax = findClosestIndex(seriesData, access.x, domainMax, 1, indexMin, seriesData.length - 1)
+      indexMaxIsTheLastPoint = indexMax === seriesData.length - 1
 
-      return data.slice(indexMin, indexMax)
+      if( indexMin > 0 || ! indexMaxIsTheLastPoint) {
+        seriesData = seriesData.slice(indexMin, indexMax + 1) // because slice doesn't include max
+      }
+
+      attrD = line( seriesData)
+
+      if( attrD && indexMaxIsTheLastPoint && trend) {
+        // Extend the line out to the right edge of the chart.
+        var rightExtent = rangeMax * 1.1
+        rightExtent.toFixed()
+        attrD += 'H' + rightExtent
+      }
+
+      return attrD
+    }
+
+    function chartLine(_selection) {
+      var self = chartLine
+
+      _selection.each(function(_data) {
+
+        if( !group ) {
+          var classes = _config.chartClass ? "chart-line " + _config.chartClass : 'chart-line'
+          group = this._chartGroup.append('g').classed(classes, true);
+        }
+
+        filteredData = _config.seriesFilter ? _data.filter(_config.seriesFilter) : _data
+
+        // DATA JOIN
+        series = group.selectAll(".series")
+          .data(filteredData)
+
+        // UPDATE
+        series.selectAll("path")
+          .transition()
+          .duration(500)
+          .attr("d", makeLine)
+
+        // ENTER
+        series.enter()
+          .append("g")
+          .attr("class", "series")
+          .append("path")
+          .attr("class", "line")
+          .attr("d", makeLine)
+          .style("stroke", self.color);
+
+        // EXIT
+        series.exit()
+          .transition()
+          .style({opacity: 0})
+          .remove();
+
+        // Leave lastDomainMax == undefined if chart starts with no data.
+
+        if( d3.trait.utils.isData(filteredData, _config.seriesData) )
+          lastDomainMax = d3.trait.utils.extentMax(x.domain())
+      })
     }
 
     chartLine.update = function(type, duration) {
       this._super(type, duration)
 
       var dur = duration === undefined ? _super.duration() : duration
-      var attrD = function(d) {
-        return line(getDataInRange(_config.seriesData(d), x1, _config.x1));
-      }
-      lastDomainMax = trait.chart.utils.updatePathWithTrend(type, dur, x1, series, attrD, lastDomainMax)
+      lastDomainMax = trait.chart.utils.updatePathWithTrend(type, dur, x, series, makeLine, lastDomainMax)
 
       // Could pop the data off the front (off the left side of chart)
 
@@ -5201,7 +5269,7 @@
 
     chartLine.getFocusItems = function(focusPoint) {
       var foci = this._super(focusPoint),
-          myFoci = trait.focus.utils.getFocusItems( filteredData, focusPoint, focusConfig, access, x1, y, chartLine.color)
+          myFoci = trait.focus.utils.getFocusItems( filteredData, focusPoint, focusConfig, access, x, y, chartLine.color)
 
       foci = foci.concat( myFoci)
       return foci

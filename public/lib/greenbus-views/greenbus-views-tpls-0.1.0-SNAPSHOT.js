@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2014-12-19
+ * Version: 0.1.0-SNAPSHOT - 2015-01-09
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -363,8 +363,8 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
 
       var REQUEST_ADD_CHART = 'gb-chart.addChart',
           historyConstraints ={
-            time: 1000 * 60 * 60 * 1, // 1 hours
-            size: 60 * 60 * 1, // 1 hours of 1 second data
+            time: 1000 * 60 * 60 * 2, // 2 hours
+            size: 60 * 60 * 2, // 2 hours of 1 second data
             throttling: 5000
           }
 
@@ -372,7 +372,14 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
 
 
       function subscribeToMeasurementHistory( chart, point ) {
-        var notify = function () { chart.update( 'trend' ) }
+        var firstNotify = true
+
+        function notify() {
+          if( firstNotify) {
+            firstNotify = false
+            chart.trendStart( 300)
+          }
+        }
 
         point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart, notify )
       }
@@ -418,6 +425,8 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       $scope.chartRemove = function ( index ) {
 
         var chart = $scope.charts[index]
+        chart.trendStop()
+
         chart.points.forEach( function ( point ) {
           unsubscribeToMeasurementHistory( chart, point )
         } )
@@ -506,8 +515,8 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
         $scope.$digest()
         $scope.chart.traits.invalidate( 'resize', 0)
         $scope.chart.brushTraits.invalidate( 'resize', 0)
+        $scope.chart.trendStart( 300)
       }
-      $scope.chart.invalidate( 'trend')
     }
 
     function subscribeToMeasurementHistory( chart, point) {
@@ -563,6 +572,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
     }
 
     $scope.chartRemove = function() {
+      $scope.chart.trendStop()
       $scope.chart.points.forEach( function( point) {
         unsubscribeToMeasurementHistory( $scope.chart, point)
       });
@@ -643,8 +653,8 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
             sizes.brush.height = 0
           } else {
             sizes.brush.height = Math.floor( sizes.container.height * 0.18)
-            if( sizes.brush.height < 50)
-              sizes.brush.height = 50
+            if( sizes.brush.height < 60)
+              sizes.brush.height = 60
             else if( sizes.brush.height > 100)
               sizes.brush.height = 100
             sizes.main.height = sizes.container.height - sizes.brush.height
@@ -880,6 +890,8 @@ function GBChart( _points, _brushChart) {
   self.brushChart = _brushChart
   self.brushTraits = _brushChart ? makeBrushTraits() : undefined
   self.brushSelection = null
+  self.trendTimer = null
+
 
   self.isEmpty = function() {
     return self.points.length <= 0
@@ -938,12 +950,19 @@ function GBChart( _points, _brushChart) {
   }
 
   function makeChartConfigScaleX1() {
-    return self.brushChart ? {
+    var intervalCount = self.brushChart ? 4 : 2
+    return {
       axis: 'x1',
-      trend: { track: 'domain-max', domain: { interval: d3.time.hour, count: 2 } }
+      trend: {
+        track:  'current-time',
+        domain: {
+          interval: d3.time.hour,
+          count: intervalCount
+        }
+      }
     }
-      : {axis: 'x1'}
   }
+
   function makeChartTraits( unitMap, size ) {
     var gridLines = true,
         unitMapKeys = Object.keys( unitMap ),
@@ -973,6 +992,7 @@ function GBChart( _points, _brushChart) {
       chartTraits = chartTraits.trait( d3.trait.scale.linear, scaleConfig )
         .trait( d3.trait.chart.line, {
           interpolate: interpolate,
+          trend: true,
           seriesFilter: filter,
           yAxis: axis,
           focus: {distance: 1000, axis: 'x'}
@@ -1005,7 +1025,7 @@ function GBChart( _points, _brushChart) {
 
 
     brushTraits = d3.trait( d3.trait.chart.base, config )
-      .trait( d3.trait.scale.time, { axis: 'x1'})
+      .trait( d3.trait.scale.time, makeChartConfigScaleX1())
       .trait( d3.trait.scale.linear, { axis: 'y1' })
       .trait( d3.trait.chart.line, { interpolate: 'step-after' })
       .trait( d3.trait.control.brush, { axis: 'x1', target: self.traits, targetAxis: 'x1'})
@@ -1093,6 +1113,25 @@ function GBChart( _points, _brushChart) {
     }
 
     self.uniqueNames()
+  }
+
+  self.trendStart = function( interval, duration) {
+    if( duration === undefined)
+      duration = interval * 0.95
+
+    var traits = self.brushChart ? self.brushTraits : self.traits
+    traits.update( 'trend', duration)
+
+    self.trendTimer = setInterval( function() {
+      traits.update( 'trend', duration)
+    }, interval)
+  }
+
+  self.trendStop = function( ) {
+    if( self.trendTimer) {
+      clearInterval( self.trendTimer)
+      self.trendTimer = null
+    }
   }
 
   // typ is usually 'trend'
@@ -2257,7 +2296,8 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       measurements.forEach( function( pm) {
         pm.measurement.value = formatMeasurementValue( pm.measurement.value )
       })
-      notify.call( subscriber, measurements)
+      if( notify)
+        notify.call( subscriber, measurements)
     }
 
     /**
