@@ -1,17 +1,9 @@
 @(message: String)
 
 @main("Operator", routes.Assets.versioned("javascripts/operator")) {
-<!--
-<div class="statusBanner">
-    <div class="statusCenter" ng-controller="ReefStatusControl" ng-show="visible">
-        <div class="statusBlock">
-            <div class="statusBox">
-                <div class=statusText><strong>Not connected. </strong> {{status.description}}</div>
-            </div>
-        </div>
-    </div>
-</div>
--->
+
+<gb-notification ></gb-notification>
+
 <nav-bar-top href="/apps/operator/menus/top"></nav-bar-top>
 
 <div class="container-fluid" ng-controller="MenuControl">

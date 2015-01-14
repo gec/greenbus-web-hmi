@@ -114,7 +114,7 @@ define([
 //          when('/agents/:name', {templateUrl: '/partials/agentdetail.html', controller: 'AgentDetailControl'}).
 //          when('/permissionsets', {templateUrl: '/partials/permissionsets.html', controller: 'PermissionSetControl'}).
 //          when('/permissionsets/:name', {templateUrl: '/partials/permissionsetdetail.html', controller: 'PermissionSetDetailControl'}).
-          otherwise({redirectTo: '/view1'});
+          otherwise({redirectTo: '/measurements'});
       }]);
 
     $(document).ready(function () {

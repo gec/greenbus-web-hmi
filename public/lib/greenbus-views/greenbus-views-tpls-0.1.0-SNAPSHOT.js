@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-09
+ * Version: 0.1.0-SNAPSHOT - 2015-01-14
  * License: Apache Version 2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["template/chart/chart.html","template/chart/charts.html","template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html","template/selection/selectAll.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["template/chart/chart.html","template/chart/charts.html","template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html","template/notification/notification.html","template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -3452,6 +3452,104 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'greenbus.views.res
  * contributor license agreements. See the NOTICE file distributed with this
  * work for additional information regarding copyright ownership. Green Energy
  * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * 'License'); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.views.subscription']).
+
+/**
+ * Control notification messages on top of screen. The current notifications are a reflection of the rest service (HTTP requests)
+ * and subscription service (WebSocket).
+ *
+ *
+ * rest      | subscription      | message
+ * ------------------------------------------------------------------
+ * INIT      | INIT              | Initializing services... (rest, subscription)
+ * UP        | INIT              | Initializing services... (subscription)
+ * UP        | UP                | -
+ *
+ *
+ * Initializing services... (rest, subscription)
+ * Initializing services... (rest)
+ * Not logged in. Redirecting to login page...
+ * Application server is not responding.  (rest, subscription)
+ * Service failure... (subscription
+ */
+  controller( 'gbNotificationController', [ '$scope', 'rest', 'subscription',
+    function( $scope, rest, subscription) {
+
+      var restStatus = rest.getStatus(),
+          subscriptionStatus = subscription.getStatus(),
+          greenbusStatus = {
+            status: 'UP', // let's assume UP until we hear otherwise.
+            reinitializing: false,
+            description: ''
+          }
+
+      $scope.notifications = []
+
+      function makeNotifications() {
+        $scope.notifications = []
+        if( restStatus.status !== rest.STATUS.UP)
+          $scope.notifications.push( restStatus.description)
+        if( subscriptionStatus.status !== subscription.STATUS.UP && subscriptionStatus.status !== subscription.STATUS.UNOPENED)
+          $scope.notifications.push( subscriptionStatus.description)
+        if( greenbusStatus.status !== 'UP')
+          $scope.notifications.push( greenbusStatus.description)
+      }
+
+      $scope.$on( 'rest.status', function( event, status) {
+        restStatus = status;
+        //if( restStatus.status !== 'UP')
+        makeNotifications()
+      })
+
+      $scope.$on( 'subscription.status', function( event, status) {
+        subscriptionStatus = status;
+        //if( subscriptionStatus.status !== 'UP')
+        makeNotifications()
+      })
+
+      $scope.$on( 'greenbus.status', function( event, status) {
+        greenbusStatus = status;
+        //if( greenbusStatus.status !== 'UP')
+        makeNotifications()
+      })
+
+    }]).
+
+  directive( 'gbNotification', function(){
+    return {
+      restrict: 'E', // Element name
+      // The template HTML will replace the directive.
+      replace: true,
+      transclude: true,
+      scope: true,
+      templateUrl: 'template/notification/notification.html',
+      controller: 'gbNotificationController'
+    }
+  })
+
+
+
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
  * "License"); you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
@@ -3570,10 +3668,17 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       initialize: 0,
       get:        0
     }
+
+    var STATUS = {
+      NOT_LOGGED_IN: 'NOT_LOGGED_IN',
+      APPLICATION_SERVER_DOWN: 'APPLICATION_SERVER_DOWN',
+      APPLICATION_REQUEST_FAILURE: 'APPLICATION_REQUEST_FAILURE',
+      UP: 'UP'
+    }
     var status = {
-      status:         'NOT_LOGGED_IN',
+      status:         STATUS.NOT_LOGGED_IN,
       reinitializing: true,
-      description:    'loading Reef client...'
+      description:    'Initializing connection to server...'
     }
     console.log('status = ' + status.status)
 
@@ -3589,30 +3694,32 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
 
     if( authentication.isLoggedIn() ) {
-      console.log('reef: authentication.isLoggedIn()')
+      console.log('rest: authentication.isLoggedIn()')
       // Let's assume, for now, that we already logged in and have a valid authToken.
       setStatus({
-        status:         'UP',
+        status:         STATUS.UP,
         reinitializing: false,
         description:    ''
       })
 
     } else {
-      console.log('reef: ! authentication.isLoggedIn()')
+      console.log('rest: ! authentication.isLoggedIn()')
     }
 
 
     function handleConnectionStatus(json) {
       setStatus(json);
 
-      if( status.status === 'UP' && redirectLocation )
+      if( status.status === STATUS.UP && redirectLocation )
         $location.path(redirectLocation)
     }
 
     function setStatus(s) {
-      status = s
-      console.log('setStatus: ' + status.status)
-      $rootScope.$broadcast('reef.status', status);
+      if( status.status !== s.status || status.description !== s.description ||  status.reinitializing !== s.reinitializing) {
+        status = s
+        console.log('rest.setStatus: ' + status.status + ' - ' + status.description)
+        $rootScope.$broadcast('rest.status', status);
+      }
     }
 
 
@@ -3628,13 +3735,13 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       console.error('coralRequest error ' + config.method + ' ' + config.url + ' ' + statusCode + ' json: ' + JSON.stringify(json));
       if( statusCode === 0 ) {
         setStatus({
-          status:         'APPLICATION_SERVER_DOWN',
+          status:         STATUS.APPLICATION_SERVER_DOWN,
           reinitializing: false,
           description:    'Application server is not responding. Your network connection is down or the application server appears to be down.'
         });
       } else if( statusCode == 401 ) {
         setStatus({
-          status:         'NOT_LOGGED_IN',
+          status:         STATUS.NOT_LOGGED_IN,
           reinitializing: true,
           description:    'Not logged in.'
         });
@@ -3642,7 +3749,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
         authentication.redirectToLoginPage(redirectLocation)
       } else if( statusCode === 404 || statusCode === 500 || (isString(json) && json.length === 0) ) {
         setStatus({
-          status:         'APPLICATION_REQUEST_FAILURE',
+          status:         STATUS.APPLICATION_REQUEST_FAILURE,
           reinitializing: false,
           description:    'Application server responded with status ' + statusCode
         });
@@ -3662,7 +3769,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
     function get(url, name, $scope, successListener) {
       $scope.loading = true;
-      //console.log( 'reef.get ' + url + ' retries:' + retries.get);
+      //console.log( 'rest.get ' + url + ' retries:' + retries.get);
 
 
       if( !authentication.isLoggedIn() ) {
@@ -3675,16 +3782,16 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
       // Register for controller.$destroy event and kill any retry tasks.
       $scope.$on('$destroy', function(event) {
-        //console.log( 'reef.get destroy ' + url + ' retries:' + retries.get);
+        //console.log( 'rest.get destroy ' + url + ' retries:' + retries.get);
         if( $scope.task ) {
-          console.log('reef.get destroy task' + url + ' retries:' + retries.get);
+          console.log('rest.get destroy task' + url + ' retries:' + retries.get);
           $timeout.cancel($scope.task);
           $scope.task = null;
           retries.get = 0;
         }
       });
 
-      if( status.status !== 'UP' ) {
+      if( status.status !== STATUS.UP ) {
         console.log('self.get ( status.status != "UP")')
         retries.get++;
         var delay = retries.get < 5 ? 1000 : 10000
@@ -3706,15 +3813,15 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
           if( name )
             $scope[name] = json;
           $scope.loading = false;
-          console.log('reef.get success json.length: ' + json.length + ', url: ' + url);
+          console.log('rest.get success json.length: ' + json.length + ', url: ' + url);
 
           if( successListener )
             successListener(json)
 
           // If the get worked, the service must be up.
-          if( status.status != 'UP' ) {
+          if( status.status != STATUS.UP ) {
             setStatus({
-              status:         'UP',
+              status:         STATUS.UP,
               reinitializing: false,
               description:    ''
             });
@@ -3732,7 +3839,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
         success(function(json) {
           if( name )
             $scope[name] = json;
-          console.log('reef.post success json.length: ' + json.length + ', url: ' + url);
+          console.log('rest.post success json.length: ' + json.length + ', url: ' + url);
 
           if( successListener )
             successListener(json)
@@ -3763,7 +3870,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
         success(function(json) {
           if( name )
             $scope[name] = json;
-          console.log('reef.delete success json.length: ' + json.length + ', url: ' + url);
+          console.log('rest.delete success json.length: ' + json.length + ', url: ' + url);
 
           if( successListener )
             successListener(json)
@@ -3802,7 +3909,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
      * Public API
      */
     return {
-
+      STATUS: STATUS,
       getStatus: getStatus,
       get: get,
       post: post,
@@ -3836,11 +3943,11 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
           var status = {
             status:         'APPLICATION_SERVER_DOWN',
             reinitializing: false,
-            description:    'Application server is not responding. Your network connection is down or the application server appears to be down.'
+            description:    'Application server is not responding. Your network connection is down or the application server appears to be down. HTTP Status: ' + httpStatus
           };
 
           //var $rootScope = $rootScope || $injector.get('$rootScope');
-          $rootScope.$broadcast('reef.status', status);
+          $rootScope.$broadcast('rest.status', status);
 
           return response;
         } else {
@@ -4003,23 +4110,40 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
   factory('subscription', ['$rootScope', '$location', 'authentication', 'websocketFactory', function( $rootScope, $location, authentication, websocketFactory){
 
 
-    var STATE = {
-      NOT_CONNECTED: 'No connection to server',
-      CONNECTION_FAILED: 'Connection to server failed. Your network connection is down or the application server appears to be down.',
-      CONNECTING: 'Connecting to server...',
-      CONNECTED: 'Connected to server'
-    }
+    var STATUS = {
+          UNOPENED: 'UNOPENED',
+          OPENING: 'OPENING',
+          CLOSED: 'CLOSED',
+          UP: 'UP'
+        },
+        DIGEST = {
+          NONE: 0,   // No current Angular digest cycle
+          CURRENT: 1 // Currently within a Angular digest cycle
+        }
+        
+        
 
     var status = {
-      state: STATE.NOT_CONNECTED,
-      reinitializing: false
+      status: STATUS.UNOPENED,
+      reinitializing: false,
+      description: 'WebSocket unopened'
     }
-    function setStatus( state, reinitializing) {
-      status.state = state
-      if( reinitializing)
-        status.reinitializing = reinitializing
-      console.log( 'setStatus: ' + status.state)
-      $rootScope.$broadcast( 'subscription.status', status);
+    function setStatus( digestState, theStatus, description, reinitializing) {
+
+      if( status.status !== theStatus || status.description !== description ||  status.reinitializing !== reinitializing) {
+        status.status = theStatus
+        status.description = description
+        if( reinitializing)
+          status.reinitializing = reinitializing
+        console.log( 'subscription.setStatus: ' + status.status + ' - ' + description)
+        if( digestState === DIGEST.CURRENT) {
+          $rootScope.$broadcast( 'subscription.status', status);
+        } else {
+          $rootScope.$apply( function() {
+            $rootScope.$broadcast( 'subscription.status', status);
+          })
+        }
+      }
     }
 
 
@@ -4039,25 +4163,19 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
         if( message.type === 'ConnectionStatus') {
           console.debug( 'onMessage.ConnectionStatus ' + message.data)
-          handleReefConnectionStatus( message.data)
+          handleGreenBusConnectionStatus( message.data)
           return
         }
 
-        // Handle errors
-        if(message.error) {
-          handleError( message)
-          return
-        }
-
-//                    console.debug( 'onMessage message.subscriptionId=' + message.subscriptionId + ', message.type=' + message.type)
+        // console.debug( 'onMessage message.subscriptionId=' + message.subscriptionId + ', message.type=' + message.type)
 
         var listener = getListenerForMessage( message)
-        if( listener && listener.message)
-          listener.message( message.subscriptionId, message.type, message.data)
+        if( listener)
+          handleMessageWithListener( message, listener)
       },
       onopen: function(event) {
         console.log( 'webSocket.onopen event: ' + event)
-        setStatus( STATE.CONNECTED)
+        setStatus( DIGEST.NONE, STATUS.UP, '')
 
         while( webSocketPendingTasks.length > 0) {
           var data = webSocketPendingTasks.shift()
@@ -4072,7 +4190,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
         console.log( 'webSocket.onclose code: ' + code + ', wasClean: ' + wasClean + ', reason: ' + reason)
         webSocket = null
 
-        setStatus( STATE.CONNECTION_FAILED)
+        setStatus( DIGEST.NONE, STATUS.CLOSED, 'WebSocket closed. Your network connection is down or the application server appears to be down.')
         removeAllSubscriptions( 'WebSocket onclose()')
 
         // Cannot redirect here because this webSocket thread fights with the get reply 401 thread.
@@ -4083,7 +4201,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
         var name = event.name;
         var message = event.message;
         console.log( 'webSocket.onerror name: ' + name + ', message: ' + message + ', data: ' + data)
-        setStatus( STATE.CONNECTION_FAILED);
+        setStatus( DIGEST.NONE, STATUS.CLOSED, 'WebSocket closed with error. Your network connection is down or the application server appears to be down.');
         removeAllSubscriptions( 'WebSocket onerror()')
       }
     }
@@ -4095,27 +4213,29 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
         return null
     }
 
-    function handleError( message) {
-      //webSocket.close()
-      console.log( 'webSocket.handleError message.error: ' + message.error)
-      if( message.jsError)
-        console.error( 'webSocket.handleError message.jsError: ' + message.jsError)
+    function handleMessageWithListener( message, listener) {
+      if( ! message.error) {
 
-      var listener = getListenerForMessage( message);
-      if( listener && listener.error)
-        listener.error( message.error, message)
+        if( listener.message)
+          listener.message( message.subscriptionId, message.type, message.data)
+
+      } else {
+
+        console.log( 'webSocket.handleError message.error: ' + message.error)
+        if( message.jsError)
+          console.error( 'webSocket.handleError message.jsError: ' + message.jsError)
+
+        if( listener.error)
+          listener.error( message.error, message)
+
+      }
     }
 
-    function handleReefConnectionStatus( json) {
-      // TODO! this is a reef status, not connection
-      $rootScope.$broadcast( 'reef.status', json)
-    }
+    function handleGreenBusConnectionStatus( json) {
+      $rootScope.$apply( function() {
+        $rootScope.$broadcast( 'greenbus.status', json)
+      })
 
-    function unsubscribe( subscriptionId) {
-      webSocket.send(JSON.stringify(
-        { unsubscribe: subscriptionId}
-      ))
-      delete subscription[ subscriptionId]
     }
 
     function saveSubscriptionOnScope( $scope, subscriptionId) {
@@ -4132,7 +4252,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
       // TODO save return value as unregister function. Could have multiples on one $scope.
       $scope.$on( '$destroy', function( event) {
         if( $scope.subscriptionIds) {
-          console.log( 'reef.subscribe $destroy ' + $scope.subscriptionIds.length);
+          console.log( 'subscription $destroy ' + $scope.subscriptionIds.length);
           $scope.subscriptionIds.forEach( function( subscriptionId) {
             unsubscribe( subscriptionId)
             delete subscription.listeners[ subscriptionId]
@@ -4201,76 +4321,81 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
       subscription.listeners[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
     }
 
+
+    function subscribe( json, $scope, messageListener, errorListener) {
+
+      var subscriptionId = addSubscriptionIdToMessage( json)
+      var request = JSON.stringify( json)
+
+      // Lazy init of webSocket
+      if( status.status == STATUS.UP) {
+
+        try {
+          webSocket.send( request)
+
+          // We're good, so save request for WebSocket.onmessage()
+          console.log( 'subscribe: send( ' + request + ')')
+          registerSubscriptionOnScope( $scope, subscriptionId);
+          subscription.listeners[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
+        } catch( ex) {
+          if( errorListener)
+            errorListener( 'Could not send subscribe request to server. Exception: ' + ex)
+          subscriptionId = null
+        }
+
+      } else{
+
+        if( status.status != STATUS.OPENING) {
+          setStatus( DIGEST.CURRENT, STATUS.OPENING, 'Initializing WebSocket for subscription services.')
+
+          try {
+            if( ! authentication.isLoggedIn())  // TODO: Should we redirect to login?
+              throw 'Not logged in.'
+            webSocket = makeWebSocket()
+            if( ! webSocket)
+              throw 'WebSocket create failed.'
+
+            pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener)
+
+          } catch( ex) {
+            var description = 'Unable to open WebSocket connection to server. Exception: ' + ex
+            // TODO: not logged in!
+            setStatus( DIGEST.CURRENT, STATUS.CLOSED, description)
+            webSocket = null
+            if( errorListener)
+              errorListener( description)
+            subscriptionId = null
+          }
+
+        } else {
+          // Already opening WebSocket, STATUS.OPENING. Just push pending.
+          pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener)
+        }
+
+      }
+
+      return subscriptionId
+    }
+
+    function unsubscribe( subscriptionId) {
+      if( webSocket)
+        webSocket.send(JSON.stringify(
+          { unsubscribe: subscriptionId}
+        ))
+      if( subscription.hasOwnProperty( subscriptionId))
+        delete subscription[ subscriptionId]
+    }
+
+
     /**
      * Public API
      */
     return {
-      STATE: STATE, // publish STATE enum
-
-      getStatus: function() {
-        return status;
-      },
-
-      subscribe: function( json, $scope, messageListener, errorListener) {
-
-        var subscriptionId = addSubscriptionIdToMessage( json)
-        var request = JSON.stringify( json)
-
-        // Lazy init of webSocket
-        if( status.state == STATE.CONNECTED) {
-
-          try {
-            webSocket.send( request)
-
-            // We're good, so save request for WebSocket.onmessage()
-            console.log( 'subscribe: send( ' + request + ')')
-            registerSubscriptionOnScope( $scope, subscriptionId);
-            subscription.listeners[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
-          } catch( ex) {
-            if( errorListener)
-              errorListener( 'Could not send subscribe request to server. Exception: ' + ex)
-            subscriptionId = null
-          }
-
-        } else{
-
-          if( status.state != STATE.CONNECTING) {
-            setStatus( STATE.CONNECTING)
-
-            try {
-              if( ! authentication.isLoggedIn())  // TODO: Should we redirect to login?
-                throw 'Not logged in.'
-              webSocket = makeWebSocket()
-              if( ! webSocket)
-                throw 'WebSocket create failed.'
-
-              pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener)
-
-            } catch( ex) {
-              setStatus( STATE.CONNECTION_FAILED)
-              webSocket = null
-              if( errorListener)
-                errorListener( 'Could not create connection to server. Exception: ' + ex)
-              subscriptionId = null
-            }
-
-          } else {
-            // Already opening WebSocket, STATE.CONNECTING. Just push pending.
-            pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener)
-          }
-
-        }
-
-        return subscriptionId
-      },
-
+      STATUS: STATUS, // publish STATUS enum
+      getStatus: function() { return status; },
+      subscribe: subscribe,
       unsubscribe: unsubscribe
-
-
-  }
-
-
-
+    }
 
   }]);
 
@@ -4728,6 +4853,13 @@ angular.module("template/navigation/navList.html", []).run(["$templateCache", fu
     "        <span ng-switch-when=\"header\">{{ item.label }}</span>\n" +
     "    </li>\n" +
     "</ul>");
+}]);
+
+angular.module("template/notification/notification.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("template/notification/notification.html",
+    "<div class=\"gb-notification-container\">\n" +
+    "    <div class=\"gb-notification-message\" ng-repeat=\"notification in notifications\">{{ notification }}</div>\n" +
+    "</div>");
 }]);
 
 angular.module("template/selection/selectAll.html", []).run(["$templateCache", function($templateCache) {

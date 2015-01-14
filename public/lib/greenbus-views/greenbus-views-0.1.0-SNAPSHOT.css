@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-09
+ * Version: 0.1.0-SNAPSHOT - 2015-01-14
  * License: Apache Version 2.0
  */
 
@@ -176,53 +176,30 @@
   border-bottom-style: solid;
 }
 
-.statusBanner {
+
+.gb-notification-container {
+  left: 0;
+  top: 0;
+  margin: 0;
+  font-family: arial, sans-serif;
+  font-weight: bold;
   visibility: hidden;
   z-index: 2000;
   position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 2em;
-}
-
-.statusCenter {
   text-align: center;
-  visibility: visible;
-  font-size: 80%;
+  width: 100%;
+  height: 100%;
 }
-
-.statusBlock {
+.gb-notification-message {
   position: relative;
   display: inline-block;
-  padding: 0 10px;
-}
-
-.statusBox {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  -webkit-border-top-left-radius: 0;
-  -webkit-border-top-right-radius: 0;
-
-  border: 1px solid #fff1a8;
-  border-radius: 2px;
-  -webkit-border-radius: 2px;
-  -webkit-box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-
-  background: #fff1a8;
-  color: #222;
-  padding: 3px 3px 0;
-  border-top: 0;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  -webkit-border-top-left-radius: 0;
-  -webkit-border-top-right-radius: 0;
-}
-
-.statusText {
-  color: #222;
-  white-space: nowrap;
+  visibility: visible;
+  font-size: 80%;
+  padding: 6px 10px;
+  background-color: #f9edbe;
+  border: 1px solid #f0c36d;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  margin: 0 1em 0.4em;
 }
 
 
