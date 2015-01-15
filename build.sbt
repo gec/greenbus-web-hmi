@@ -3,6 +3,7 @@ import _root_.sbt.Keys._
 import _root_.sbt.Path
 import play.twirl.sbt.Import.TwirlKeys
 import com.google.javascript.jscomp.{CompilerOptions, CompilationLevel}
+import RjsKeys._
 
 name := "greenbus-web-hmi"
 
@@ -88,6 +89,9 @@ scalacOptions in ThisBuild ++= Seq(
   "-Ywarn-inaccessible",
   "-Ywarn-dead-code"
 )
+
+// Need to specify main module if it's not main.js
+RjsKeys.mainModule := "operator"
 
 // Configure the steps of the asset pipeline (used in stage and dist tasks)
 // rjs = RequireJS, uglifies, shrinks to one file, replaces WebJars with CDN

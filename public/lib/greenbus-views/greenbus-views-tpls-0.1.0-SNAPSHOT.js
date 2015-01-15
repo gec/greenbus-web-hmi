@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-14
+ * Version: 0.1.0-SNAPSHOT - 2015-01-15
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -1084,9 +1084,11 @@ function GBChart( _points, _brushChart) {
     self.traits.remove()
     self.traits = makeChartTraits( self.unitMap, size )
 
-    size = self.brushTraits.size()
-    self.brushTraits.remove()
-    self.brushTraits = makeBrushTraits( size)
+    if( self.brushChart) {
+      size = self.brushTraits.size()
+      self.brushTraits.remove()
+      self.brushTraits = makeBrushTraits( size)
+    }
 
     self.callTraits()
   }
