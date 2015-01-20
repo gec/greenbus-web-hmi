@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-15
+ * Version: 0.1.0-SNAPSHOT - 2015-01-20
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -1704,13 +1704,15 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
 angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.subscription']).
 
-  controller('gbAlarmsController', ['$scope', '$attrs', 'rest', 'subscription', function( $scope, $attrs, rest, subscription) {
+  controller('gbAlarmsController', ['$scope', '$attrs', 'rest', 'subscription', '$timeout', function( $scope, $attrs, rest, subscription, $timeout) {
     $scope.loading = true
     $scope.alarms = []
 //    $scope.alarmsFiltered = []
     $scope.limit = Number( $attrs.limit || 20);
     $scope.selectAllState = 0
     $scope.searchText = ''
+    $scope.notification = undefined // {type: 'danger', message: ''}  types: success, info, warning, danger
+    $scope.notificationTask = undefined // $timeout task
 
     var alarmIdMap = {}
 
@@ -1783,8 +1785,12 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
 
         if( update.state === 'REMOVED') {
           var i = $scope.alarms.indexOf( alarm)
-          if( i >= 0)
+          if( i >= 0) {
+            var a = $scope.alarms[i]
+            if( a.checked)
+              $scope.selectItem( a, 0) // selection needs to update its select count.
             $scope.alarms.splice( i, 1);
+          }
           delete alarmIdMap[alarm.id];
         } else {
           alarm.state = update.state
@@ -1814,6 +1820,11 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
         },
         function( ex, statusCode, headers, config) {
           console.log( 'gbAlarmsController.updateRequest ERROR updating alarms with ids: ' + ids.join() + ' to state "' + newState + '". Exception: ' + ex.exception + ' - ' + ex.message)
+          ids.forEach( function( id) {
+            var a = alarmIdMap[id]
+            if( a)
+              a.updateState = 'none'
+          })
         }
       )
     }
@@ -1832,26 +1843,55 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       }
     }
 
+    function isSelected( alarm) {
+      return alarm.checked
+    }
     function isSelectedAndUnackAudible( alarm) {
       return alarm.checked && alarm.state === 'UNACK_AUDIBLE'
     }
     function isSelectedAndUnack( alarm) {
       return alarm.checked && ( alarm.state === 'UNACK_AUDIBLE' || alarm.state === 'UNACK_SILENT')
     }
-    function isSelectedAndNotRemoving( alarm) {
-      return alarm.checked && alarm.state !== 'REMOVED' && alarm.updateState !== 'removing'
+    function isSelectedAndRemovable( alarm) {
+      return alarm.checked && alarm.state === 'ACKNOWLEDGED' && alarm.updateState !== 'removing'
     }
     function getId( alarm) { return alarm.id }
 
-    function updateSelected( filter, newState, newUpdateState) {
-      var selected = $scope.alarms.filter( filter),
-          ids = selected.map( getId)
-      selected.forEach( function( a) { a.updateState = newUpdateState})
-      updateRequest( ids, newState)
+    function setNotification( typ, message, timeout) {
+      if( $scope.notificationTask) {
+        $timeout.cancel( $scope.notificationTask)
+        $scope.notificationTask = undefined
+      }
+
+      $scope.notification = {type: typ, message: message}
+
+      if( timeout) {
+        $scope.notificationTask = $timeout(function() {
+          $scope.notification = undefined
+          $scope.notificationTask = undefined
+        }, timeout);
+      }
     }
-    $scope.silenceSelected = function() { updateSelected( isSelectedAndUnackAudible, 'UNACK_SILENT', 'updating') }
-    $scope.acknowledgeSelected = function() { updateSelected( isSelectedAndUnack, 'ACKNOWLEDGED', 'updating') }
-    $scope.removeSelected = function() { updateSelected( isSelectedAndNotRemoving, 'REMOVED', 'removing') }
+
+    function updateSelected( filter, newState, newUpdateState, allSelectedAreNotValidMessage, someSelectedAreNotValidMessage) {
+      var selectedAndValid = $scope.alarms.filter( filter)
+
+      if( selectedAndValid.length > 0) {
+        var ids = selectedAndValid.map( getId)
+        selectedAndValid.forEach( function( a) { a.updateState = newUpdateState})
+        if( someSelectedAreNotValidMessage) {
+          var selected = $scope.alarms.filter( isSelected)
+          if( selected.length > selectedAndValid.length)
+            setNotification( 'info', someSelectedAreNotValidMessage, 5000)
+        }
+        updateRequest( ids, newState)
+      } else {
+        setNotification( 'info', allSelectedAreNotValidMessage, 5000)
+      }
+    }
+    $scope.silenceSelected = function() { updateSelected( isSelectedAndUnackAudible, 'UNACK_SILENT', 'updating', 'No audible alarms are selected.') }
+    $scope.acknowledgeSelected = function() { updateSelected( isSelectedAndUnack, 'ACKNOWLEDGED', 'updating', 'No unacknowledged alarms are selected.') }
+    $scope.removeSelected = function() { updateSelected( isSelectedAndRemovable, 'REMOVED', 'removing', 'No acknowledged alarms are selected.', 'Unacknowledged alarms were not removed.') }
 //    $scope.hitIt = function() {
 //      var selected = $scope.alarms.filter( isSelectedAndUnack),
 //          ids = selected.map( getId),
@@ -2227,7 +2267,7 @@ MeasurementHistory.prototype.removeSubscriber = function(subscriber) {
  */
 
 
-angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'greenbus.views.navigation', 'greenbus.views.rest']).
+angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'greenbus.views.navigation', 'greenbus.views.rest', 'greenbus.views.request', 'greenbus.views.selection']).
   factory('pointIdToMeasurementHistoryMap', function() {
     return {};
   }).
@@ -2356,19 +2396,13 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       var self = this
       $scope.points = []
       $scope.pointsFiltered = []
-      $scope.checkAllState = CHECKMARK_UNCHECKED
-      $scope.checkCount = 0
+      $scope.selectAllState = 0
       $scope.charts = []
 
       // Search
       $scope.searchText = ''
       $scope.sortColumn = 'name'
       $scope.reverse = false
-
-      var CHECKMARK_UNCHECKED = 0,
-          CHECKMARK_CHECKED = 1,
-          CHECKMARK_PARTIAL = 2,
-          CHECKMARK_NEXT_STATE = [1, 0, 0]
 
       var navId = $routeParams.navId,
           depth = rest.queryParameterFromArrayOrString( 'depth', $routeParams.depth ),
@@ -2403,33 +2437,9 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         return null
       }
 
-      $scope.checkUncheck = function ( point ) {
-        point.checked = CHECKMARK_NEXT_STATE[ point.checked]
-        if( point.checked === CHECKMARK_CHECKED )
-          $scope.checkCount++
-        else
-          $scope.checkCount--
-
-        if( $scope.checkCount === 0 )
-          $scope.checkAllState = CHECKMARK_UNCHECKED
-        else if( $scope.checkCount >= $scope.points.length - 1 )
-          $scope.checkAllState = CHECKMARK_CHECKED
-        else
-          $scope.checkAllState = CHECKMARK_PARTIAL
-
+      $scope.selectAllChanged = function( state) {
+        $scope.selectAllState = state
       }
-      $scope.checkUncheckAll = function () {
-        $scope.checkAllState = CHECKMARK_NEXT_STATE[ $scope.checkAllState]
-        // if check, check visible. If uncheck, uncheck all.
-        var ps = $scope.checkAllState === CHECKMARK_CHECKED ? $scope.pointsFiltered : $scope.points
-        var i = ps.length - 1
-        $scope.checkCount = $scope.checkAllState === CHECKMARK_CHECKED ? i : 0
-        for( ; i >= 0; i-- ) {
-          var point = ps[ i]
-          point.checked = $scope.checkAllState
-        }
-      }
-
 
       $scope.chartAddPointById = function( id) {
         var point = findPoint( id)
@@ -2443,7 +2453,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       $scope.chartAddSelectedPoints = function() {
         // Add all measurements that are checked and visible.
         var points = $scope.pointsFiltered.filter( function ( m ) {
-          return m.checked === CHECKMARK_CHECKED
+          return m.checked === 1
         } )
 
         if( points.length > 0 ) {
@@ -2723,9 +2733,9 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
 
       $scope.rowClasses = function( point) {
         return point.rowDetail ? 'gb-row-selected-detail animate-repeat'
-          : point.rowSelected ? 'gb-row-selected animate-repeat'
-          : point.commandSet ? 'gb-row-selectable animate-repeat'
-          : 'animate-repeat'
+          : point.rowSelected ? 'gb-point gb-row-selected animate-repeat'
+          : point.commandSet ? 'gb-point gb-row-selectable animate-repeat'
+          : 'gb-point animate-repeat'
       }
       $scope.togglePointRowById = function( id) {
         if( !id)
@@ -2851,7 +2861,6 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
               commandSet: undefined
             }
         points.forEach( function ( point ) {
-          point.checked = CHECKMARK_UNCHECKED
           point.currentMeasurement = angular.extend( {}, currentMeasurement)
           pointIds.push( point.id )
           if( typeof point.pointType !== 'string')
@@ -2981,17 +2990,6 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       templateUrl: 'template/measurement/measurements.html',
       controller: 'gbMeasurementsController'
     }
-  }).
-
-  filter('checkboxClass', function() {
-    return function(checked) {
-      switch( checked) {
-        case 0: return 'fa fa-square-o text-muted'
-        case 1: return 'fa fa-check-square-o'
-        case 2: return 'fa fa-minus-square-o'
-        default: return 'fa fa-square-o'
-      }
-    };
   }).
 
   filter('validityIcon', function() {
@@ -3999,18 +3997,11 @@ angular.module('greenbus.views.selection', []).
     $scope.selectAllState = SELECT_UNCHECKED
     $scope.selectCount = 0
 
-
-    self.selectItem = function(item) {
-      item.checked = item.hasOwnProperty( 'checked') ? SELECT_NEXT_STATE[ item.checked] : SELECT_CHECKED
-      if( item.checked === SELECT_CHECKED )
-        $scope.selectCount++
-      else
-        $scope.selectCount--
-
+    self.updateSelectAllState = function() {
       var oldSelectAllState = $scope.selectAllState
       if( $scope.selectCount === 0 )
         $scope.selectAllState = SELECT_UNCHECKED
-      else if( $scope.selectCount >= $scope.model.length )
+      else if( $scope.model && $scope.selectCount >= $scope.model.length )
         $scope.selectAllState = SELECT_CHECKED
       else
         $scope.selectAllState = SELECT_PARTIAL
@@ -4019,14 +4010,55 @@ angular.module('greenbus.views.selection', []).
         self.notifyParent( $scope.selectAllState)
     }
 
+    /**
+     * Check or uncheck item.
+     * @param item  The item to check or uncheck
+     * @param newState If undefined, toggle selection. If defined set to that state.
+     */
+    self.selectItem = function(item, newState) {
+      var currentState = item.checked || SELECT_UNCHECKED
+
+      if( newState === undefined)
+        newState = SELECT_NEXT_STATE[ currentState]
+
+      if( currentState !== newState) {
+
+        item.checked = newState
+        if( item.checked === SELECT_CHECKED )
+          $scope.selectCount++
+        else
+          $scope.selectCount--
+
+        // Just in case
+        if( $scope.selectCount < 0)
+          $scope.selectCount = 0
+
+        self.updateSelectAllState()
+      }
+
+    }
+
+    self.uncheckItem = function(item) {
+      if( item.checked) {
+        if( $scope.selectCount > 0 )
+          $scope.selectCount--
+        item.checked = false
+
+        self.updateSelectAllState()
+      }
+    }
+
     $scope.selectAll = function() {
+      if( !$scope.model || $scope.model.length === 0)
+        return
+
       $scope.selectAllState = SELECT_NEXT_STATE[ $scope.selectAllState]
       // if check, check visible. If uncheck, uncheck all.
 //      var ps = $scope.selectAllState === SELECT_CHECKED ? $scope.pointsFiltered : $scope.model
       var ps =$scope.model
-      var i = ps.length - 1
-      $scope.selectCount = $scope.selectAllState === SELECT_CHECKED ? i : 0
-      for( ; i >= 0; i-- ) {
+
+      $scope.selectCount = $scope.selectAllState === SELECT_CHECKED ? ps.length : 0
+      for( var i = ps.length - 1; i >= 0; i-- ) {
         var item = ps[ i]
         item.checked = $scope.selectAllState
       }
@@ -4050,6 +4082,7 @@ angular.module('greenbus.views.selection', []).
       link: function(scope, element, attrs, controller) {
         var selectItem = attrs.selectItem || 'selectItem'
         scope.$parent[selectItem] = controller.selectItem
+        scope.$parent.uncheckItem = controller.uncheckItem
         controller.notifyParent = function( state) {
           scope.notify( {state: state})
         }
@@ -4583,6 +4616,9 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "            <div class=\"btn-group gb-toolbar\" ng-show=\"selectAllState!==0\" role=\"group\"  style-=\"margin-left: 1.2em;\">\n" +
     "                <button class=\"btn btn-default\" ng-click=\"removeSelected()\" style=\"width: 60px;\" title=\"Remove selected alarms\"><i class=\"fa fa-trash-o\"></i></button>\n" +
     "            </div>\n" +
+    "            <div class=\"alert alert-{{notification.type}} gb-alert-inline\" ng-show=\"notification\" role=\"alert\" style=\"margin-left: 1em;\">\n" +
+    "                <span><i class=\"fa fa-info-circle\"></i> {{ notification.message }}</span>\n" +
+    "            </div>\n" +
     "        </div>\n" +
     "    </div>\n" +
     "\n" +
@@ -4674,14 +4710,8 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
     "                    <thead>\n" +
     "                    <tr>\n" +
     "                        <th colspan=\"2\" style=\"padding-bottom: 12px;\">\n" +
-    "                            <button class=\"btn btn-default\" ng-click=\"checkUncheckAll()\">\n" +
-    "                                <div class=\"gb-checkbox-container\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
-    "                                    <i ng-class=\"checkAllState | checkboxClass\"></i>\n" +
-    "                                    <!--<div ng-class=\"checkAllState | checkboxClass\"></div>-->\n" +
-    "                                </div>\n" +
-    "                            </button>\n" +
-    "                            <button class=\"btn btn-default text-muted\" ng-click=\"chartAddSelectedPoints()\" ng-show=\"checkCount>0\" style=\"width: 60px; margin-left: 14px\"><span class=\"glyphicon glyphicon-stats\"></span></button>\n" +
-    "\n" +
+    "                            <gb-select-all model=\"points\" notify=\"selectAllChanged(state)\"></gb-select-all>\n" +
+    "                            <button class=\"btn btn-default text-muted\" ng-click=\"chartAddSelectedPoints()\" ng-show=\"selectAllState!==0\" style=\"width: 60px; margin-left: 14px\"><span class=\"glyphicon glyphicon-stats\"></span></button>\n" +
     "                        </th>\n" +
     "                        <!--<th>Name</th>-->\n" +
     "                        <th></th>\n" +
@@ -4695,8 +4725,8 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
     "                    <tbody>\n" +
     "                    <tr ng-repeat=\"point in pointsFiltered = (points | filter:search | orderBy:sortColumn)\" ng-class=\"rowClasses(point)\">\n" +
     "                        <td ng-if=\"!point.rowDetail\">\n" +
-    "                            <div class=\"gb-checkbox-container\" ng-click=\"checkUncheck(point)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
-    "                                <i ng-class=\"point.checked | checkboxClass\"></i>\n" +
+    "                            <div class=\"gb-checkbox-container\" ng-click=\"selectItem(point)\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
+    "                                <i ng-class=\"point.checked | selectItemClass\"></i>\n" +
     "                            </div>\n" +
     "                        </td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">\n" +
@@ -4764,7 +4794,7 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
     "                                <div class=\"col-md-1\">\n" +
     "                                </div>\n" +
     "                                <div class=\"col-md-10\">\n" +
-    "                                    <alert ng-repeat=\"alert in point.commandSet.alerts\" type=\"alert.type\" close=\"point.commandSet.closeAlert($index)\" style=\"text-align: left; white-space: normal;\">{{alert.message}}</alert>\n" +
+    "                                    <alert ng-repeat=\"alert in point.commandSet.alerts\" type=\"{{alert.type}}\" close=\"point.commandSet.closeAlert($index)\" style=\"text-align: left; white-space: normal;\">{{alert.message}}</alert>\n" +
     "                                </div>\n" +
     "                                <div class=\"col-md-1\">\n" +
     "                                </div>\n" +
