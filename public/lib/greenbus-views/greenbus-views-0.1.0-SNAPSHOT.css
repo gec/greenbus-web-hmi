@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-20
+ * Version: 0.1.0-SNAPSHOT - 2015-01-21
  * License: Apache Version 2.0
  */
 
@@ -17,6 +17,16 @@
 
 [ng\:cloak], [ng-cloak], [data-ng-cloak], [x-ng-cloak], .ng-cloak, .x-ng-cloak {
   display: none !important;
+}
+
+td.gb-alarm-btn-xs {
+  text-align: center;
+  min-height: 22px;
+  min-width: 27px;
+}
+th.gb-alarm-btn-xs {
+  text-align: center;
+  min-width: 27px;
 }
 
 .icon-spin {

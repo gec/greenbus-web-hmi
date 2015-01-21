@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-20
+ * Version: 0.1.0-SNAPSHOT - 2015-01-21
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -1847,10 +1847,10 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       return alarm.checked
     }
     function isSelectedAndUnackAudible( alarm) {
-      return alarm.checked && alarm.state === 'UNACK_AUDIBLE'
+      return alarm.checked && alarm.state === 'UNACK_AUDIBLE' && alarm.updateState !== 'updating'
     }
     function isSelectedAndUnack( alarm) {
-      return alarm.checked && ( alarm.state === 'UNACK_AUDIBLE' || alarm.state === 'UNACK_SILENT')
+      return alarm.checked && ( alarm.state === 'UNACK_AUDIBLE' || alarm.state === 'UNACK_SILENT') && alarm.updateState !== 'updating'
     }
     function isSelectedAndRemovable( alarm) {
       return alarm.checked && alarm.state === 'ACKNOWLEDGED' && alarm.updateState !== 'removing'
@@ -1990,7 +1990,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
   }).
 
-  filter('alarmStateClass', function() {
+  filter('alarmAckClass', function() {
     return function(state, updateState) {
       var s
       switch( state) {
@@ -2006,12 +2006,21 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       return s
     };
   }).
-  filter('alarmStateTitle', function() {
+  filter('alarmAckButtonClass', function() {
     return function(state) {
       switch( state) {
-        case 'UNACK_AUDIBLE': return 'Unacknowledged audible'
-        case 'UNACK_SILENT': return 'Unacknowledged'
-        case 'ACKNOWLEDGED': return 'Acknowledged'
+        case 'UNACK_AUDIBLE': return 'btn btn-default btn-xs'
+        case 'UNACK_SILENT': return 'btn btn-default btn-xs'
+        default: return '';
+      }
+    };
+  }).
+  filter('alarmAckTitle', function() {
+    return function(state) {
+      switch( state) {
+        case 'UNACK_AUDIBLE': return 'Acknowledge alarm'
+        case 'UNACK_SILENT': return 'Acknowledge alarm'
+        case 'ACKNOWLEDGED': return 'Acknowledged alarm'
         case 'REMOVED': return 'Removed'
         default: return 'Unknown state: ' + state
       }
@@ -2022,21 +2031,23 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     return function(state) {
       switch( state) {
         case 'UNACK_AUDIBLE': return 'fa fa-volume-up gb-alarm-unack'
-        case 'UNACK_SILENT': return 'fa'
-        case 'ACKNOWLEDGED': return 'fa'
-        case 'REMOVED': return 'fa'
-        default: return 'fa fa-question-circle gb-alarm-unack'
+        default: return 'fa'
+      }
+    };
+  }).
+  filter('alarmAudibleButtonClass', function() {
+    return function(state) {
+      switch( state) {
+        case 'UNACK_AUDIBLE': return 'btn btn-default btn-xs'
+        default: return ''
       }
     };
   }).
   filter('alarmAudibleTitle', function() {
     return function(state) {
       switch( state) {
-        case 'UNACK_AUDIBLE': return 'Unacknowledged audible'
-        case 'UNACK_SILENT': return 'Unacknowledged'
-        case 'ACKNOWLEDGED': return 'Acknowledged'
-        case 'REMOVED': return 'Removed'
-        default: return 'Unknown state: ' + state
+        case 'UNACK_AUDIBLE': return 'Silence alarm'
+        default: return ''
       }
     };
   })
@@ -4614,7 +4625,7 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "                <!--<button class=\"btn btn-default\" ng-click=\"hitIt()\" style=\"width: 60px;\" title=\"Hit it with something special!\"><i class=\"fa fa-bolt\"></i></button>-->\n" +
     "            </div>\n" +
     "            <div class=\"btn-group gb-toolbar\" ng-show=\"selectAllState!==0\" role=\"group\"  style-=\"margin-left: 1.2em;\">\n" +
-    "                <button class=\"btn btn-default\" ng-click=\"removeSelected()\" style=\"width: 60px;\" title=\"Remove selected alarms\"><i class=\"fa fa-trash-o\"></i></button>\n" +
+    "                <button class=\"btn btn-default\" ng-click=\"removeSelected()\" style=\"width: 60px;\" title=\"Remove selected acknowledged alarms\"><i class=\"fa fa-trash-o\"></i></button>\n" +
     "            </div>\n" +
     "            <div class=\"alert alert-{{notification.type}} gb-alert-inline\" ng-show=\"notification\" role=\"alert\" style=\"margin-left: 1em;\">\n" +
     "                <span><i class=\"fa fa-info-circle\"></i> {{ notification.message }}</span>\n" +
@@ -4627,8 +4638,8 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "            <thead>\n" +
     "            <tr>\n" +
     "                <th></th>\n" +
-    "                <th><i class=\"fa fa-bell\"></i></th>\n" +
-    "                <th><i class=\"fa fa-volume-off\" style=\"font-size: 125%;\"></i></th>\n" +
+    "                <th class=\"gb-alarm-btn-xs\"><i class=\"fa fa-bell\"></i></th>\n" +
+    "                <th class=\"gb-alarm-btn-xs\"><i class=\"fa fa-volume-off\" style=\"font-size: 125%;\"></i></th>\n" +
     "                <th>Type</th>\n" +
     "                <th>Sev</th>\n" +
     "                <th>User</th>\n" +
@@ -4643,8 +4654,8 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "                        <i ng-class=\"alarm.checked | selectItemClass\"></i>\n" +
     "                    </div>\n" +
     "                </td>\n" +
-    "                <td ng-click=\"acknowledge(alarm)\"><i ng-class=\"alarm.state | alarmStateClass: alarm.updateState\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmStateTitle}}\"></i></td>\n" +
-    "                <td ng-click=\"silence(alarm)\"><i ng-class=\"alarm.state | alarmAudibleClass\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmAudibleTitle}}\"></i></td>\n" +
+    "                <td ng-click=\"acknowledge(alarm)\" class=\"gb-alarm-btn-xs\"><div ng-class=\"alarm.state | alarmAckButtonClass\"><i ng-class=\"alarm.state | alarmAckClass: alarm.updateState\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmAckTitle}}\"></i></div></td>\n" +
+    "                <td ng-click=\"silence(alarm)\" class=\"gb-alarm-btn-xs\"><div ng-class=\"alarm.state | alarmAudibleButtonClass\"><i ng-class=\"alarm.state | alarmAudibleClass: alarm.updateState\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmAudibleTitle}}\"></i></div></td>\n" +
     "                <td>{{alarm.event.eventType}}</td>\n" +
     "                <td>{{alarm.event.severity}}</td>\n" +
     "                <td>{{alarm.event.agent}}</td>\n" +
