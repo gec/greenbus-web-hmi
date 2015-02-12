@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-01-21
+ * Version: 0.1.0-SNAPSHOT - 2015-02-12
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["template/chart/chart.html","template/chart/charts.html","template/endpoint/endpoints.html","template/ess/esses.html","template/event/alarms.html","template/event/events.html","template/measurement/measurements.html","template/navigation/navBarTop.html","template/navigation/navList.html","template/notification/notification.html","template/selection/selectAll.html"]);
+angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -592,7 +592,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/chart/charts.html',
+      templateUrl: 'greenbus.views.template/chart/charts.html',
       controller: 'gbChartsController'
     }
   }).
@@ -703,7 +703,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/chart/chart.html',
+      templateUrl: 'greenbus.views.template/chart/chart.html',
       controller: 'gbChartController',
       link: gbChartLink
     }
@@ -1343,7 +1343,7 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/endpoint/endpoints.html',
+      templateUrl: 'greenbus.views.template/endpoint/endpoints.html',
       controller: 'gbEndpointsController'
     }
   }).
@@ -1630,7 +1630,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/ess/esses.html',
+      templateUrl: 'greenbus.views.template/ess/esses.html',
       controller: 'gbEssesController'
     }
   }).
@@ -1730,7 +1730,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     function sortByTime() {
-      $scope.alarms.sort( function( a, b) { return b.event.time - a.event.time})
+      $scope.alarms.sort( function( a, b) { return b.time - a.time})
     }
 
     // alarm can be an array or one alarm.
@@ -1753,7 +1753,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
         })
         $scope.alarms = newAlarms.concat( $scope.alarms)
       } else {
-        console.log( 'alarmService onAlarm ' + alarm.id + ' "' + alarm.state + '"' + ' "' + alarm.event.message + '"')
+        console.log( 'alarmService onAlarm ' + alarm.id + ' "' + alarm.state + '"' + ' "' + alarm.message + '"')
         alarm.updateState = 'none'
         existing = alarmIdMap[alarm.id]
         if( existing)
@@ -1793,8 +1793,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
           }
           delete alarmIdMap[alarm.id];
         } else {
-          alarm.state = update.state
-          alarm.event = update.event
+          angular.extend( alarm, update)
           alarm.updateState = 'none'
         }
       }
@@ -1908,7 +1907,8 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     var request = {
-      subscribeToActiveAlarms: {
+      subscribeToEvents: {
+        alarmsOnly: true,
         limit: $scope.limit
       }
     }
@@ -1939,8 +1939,8 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     var request = {
-      subscribeToRecentEvents: {
-        eventTypes: [],
+      subscribeToEvents: {
+        //eventTypes: [],
         limit: $scope.limit
       }
     }
@@ -1954,7 +1954,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/event/alarms.html',
+      templateUrl: 'greenbus.views.template/event/alarms.html',
       controller: 'gbAlarmsController',
       link: function(scope, element, attrs) {
         // Title element
@@ -1985,7 +1985,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/event/events.html',
+      templateUrl: 'greenbus.views.template/event/events.html',
       controller: 'gbEventsController'
     }
   }).
@@ -2052,6 +2052,309 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     };
   })
 ;
+
+
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+
+/**
+ *
+ * @param _point
+ * @param _commands
+ * @constructor
+ */
+function CommandSet( _point, _commands, commandRest, $timeout) {
+  // Control & Setpoint States
+
+
+  this.point = _point
+  this.commands = _commands
+  this.commandRest = commandRest
+  this.timeout = $timeout
+  this.state = CommandSet.States.NotSelected
+  this.lock = undefined
+  this.selectedCommand = undefined
+  this.commands.forEach( function( c) {
+    c.selectClasses = CommandSet.CommandIcons[ CommandSet.States.NotSelected]
+    c.executeClasses = CommandSet.ExecuteIcons[ CommandSet.States.NotSelected]
+    c.isSetpoint = c.commandType.indexOf('SETPOINT') === 0
+    c.blockClasses = 'fa fa-unlock'
+    if( c.isSetpoint) {
+      c.setpointValue = undefined
+
+      switch( c.commandType) {
+        case 'SETPOINT_INT':
+          c.pattern = /^[+-]?\d+$/;
+          c.placeHolder = 'int'
+          break
+        case 'SETPOINT_DOUBLE':
+          c.pattern = /^[-+]?\d+(\.\d+)?$/;
+          c.placeHolder = 'decimal'
+          break
+        case 'SETPOINT_STRING':
+          c.pattern = undefined;
+          c.placeHolder = 'text'
+          break
+        default:
+          break
+      }
+
+    }
+
+  })
+}
+
+CommandSet.States = {
+  NotSelected: 'NotSelected',   // -> Selecting
+  Selecting: 'Selecting',       // -> Selected, NotSelected (unauthorized or failure)
+  Selected: 'Selected',         // -> Executing, NotSelected, Deselecting (user or timeout)
+  Deselecting: 'Deselecting',   // -> Executing, NotSelected (user or timeout)
+  Executing: 'Executing'        // -> NotSelected (success or failure)
+}
+
+CommandSet.CommandIcons = {
+  NotSelected: 'fa fa-chevron-right text-primary',
+  Selecting: 'fa fa-chevron-right fa-spin text-primary',
+  Selected: 'fa fa-chevron-left text-primary',
+  Deselecting: 'fa fa-chevron-left fa-spin text-primary',
+  Executing: 'fa fa-chevron-left text-primary'
+}
+CommandSet.ExecuteIcons = {
+  NotSelected: '',
+  Selecting: '',
+  Selected: 'fa fa-sign-in',
+  Deselecting: 'fa fa-sign-in',
+  Executing: 'fa fa-refresh fa-spin'
+}
+
+/**
+ * Called by onClick in template
+ * @param command
+ */
+CommandSet.prototype.selectToggle = function( command) {
+  switch( this.state) {
+    case CommandSet.States.NotSelected: this.select( command); break;
+    case CommandSet.States.Selecting:   break;
+    case CommandSet.States.Selected:    this.deselect( command); break;
+    case CommandSet.States.Executing:   break;
+  }
+  this.point.ignoreRowClick = true
+}
+
+CommandSet.prototype.setState = function( state, command) {
+  console.log( 'setState from ' + this.state + ' to ' + state)
+  this.state = state
+  if( command) {
+    command.selectClasses = CommandSet.CommandIcons[this.state]
+    command.executeClasses = CommandSet.ExecuteIcons[this.state]
+    console.log( 'setState ' + this.state + ', command.classes ' + command.classes)
+  }
+}
+
+CommandSet.prototype.select = function( command) {
+  var self = this
+
+  if( this.state !== CommandSet.States.NotSelected) {
+    console.error( 'CommandSet.select invalid state: ' + this.state)
+    return
+  }
+
+  self.setState( CommandSet.States.Selecting, command)
+
+  this.commandRest.select( 'ALLOWED', [command.id],
+    function( data) {
+      self.lock = data
+      if( self.lock.expireTime) {
+        self.selectedCommand = command
+        self.setState( CommandSet.States.Selected, command)
+
+        var delay = self.lock.expireTime - Date.now()
+        console.log( 'commandLock delay: ' + delay)
+        // It the clock for client vs server is off, we'll use a minimum delay.
+        delay = Math.max( delay, 10)
+        self.selectTimeout = this.timeout(function () {
+          delete self.lock;
+          delete self.selectTimeout;
+          if( self.state === CommandSet.States.Selected || self.state === CommandSet.States.Executing) {
+            self.setState( CommandSet.States.NotSelected, self.selectedCommand)
+            self.selectedCommand = undefined
+          }
+        }, delay)
+      } else {
+        self.deselected()
+        self.alertDanger( 'Select failed. ' + data)
+      }
+    },
+    function( ex, statusCode, headers, config) {
+      console.log( 'CommandSet.select ' + ex)
+      self.alertException( ex)
+      self.deselected()
+    })
+}
+
+CommandSet.prototype.deselected = function() {
+  this.setState( CommandSet.States.NotSelected, this.selectedCommand)
+  this.selectedCommand = undefined
+}
+
+
+CommandSet.prototype.deselect = function( command) {
+  var self = this
+
+  if( this.state !== CommandSet.States.Selected) {
+    console.error( 'CommandSet.deselect invalid state: ' + this.state)
+    return
+  }
+
+  self.setState( CommandSet.States.Deselecting, self.selectedCommand)
+
+  self.commandRest.deselect( self.lock.id,
+    function( data) {
+      delete self.lock;
+      var saveCommand = self.selectedCommand
+      self.deselected()
+      if( saveCommand !== command) {
+        self.select( command)
+      }
+    },
+    function( ex, statusCode, headers, config) {
+      console.log( 'CommandSet.deselect ' + ex)
+      self.deselected()
+      self.alertException( ex)
+
+      var saveCommand = self.selectedCommand
+      self.selectedCommand = undefined
+      if( saveCommand !== command) {
+        self.select( command)
+      }
+    })
+}
+
+function getSetpointInt( value) {
+  var n = Number( value)
+
+}
+CommandSet.prototype.execute = function( command, commandIndex) {
+  var self = this
+
+  if( this.state !== CommandSet.States.Selected) {
+    console.error( 'CommandSet.execute invalid state: ' + this.state)
+    return
+  }
+
+  var args = {
+    commandLockId: self.lock.id
+  }
+
+  if( command.isSetpoint) {
+    if( command.pattern && !command.pattern.test( command.setpointValue)) {
+      switch( command.commandType) {
+        case 'SETPOINT_INT': self.alertDanger( 'Setpoint needs to be an integer value.'); return;
+        case 'SETPOINT_DOUBLE': self.alertDanger( 'Setpoint needs to be a floating point value.'); return;
+        default:
+          console.error( 'Setpoint has unknown error, "' + command.setpointValue + '" for command type ' + command.commandType);
+      }
+    }
+
+    switch( command.commandType) {
+      case 'SETPOINT_INT':
+        args.setpoint = { intValue: Number( command.setpointValue)}
+        break
+      case 'SETPOINT_DOUBLE':
+        args.setpoint = { doubleValue: Number( command.setpointValue)}
+        break
+      case 'SETPOINT_STRING':
+        args.setpoint = { stringValue: command.setpointValue}
+        break
+      default:
+        break
+    }
+  }
+
+  self.setState( CommandSet.States.Executing, command)
+
+
+  self.commandRest.execute( command.id,
+    function( commandResult) {
+      self.alertCommandResult( commandResult)
+      self.deselected()
+    },
+    function( ex, statusCode, headers, config) {
+      console.log( 'CommandSet.execute ' + ex)
+      self.deselected()
+      self.alertException( ex)
+    })
+
+  this.point.ignoreRowClick = true
+}
+
+CommandSet.prototype.closeAlert = function( index) {
+  if( this.alerts)
+    this.alerts.splice( index, 1)
+  this.point.ignoreRowClick = true
+}
+
+CommandSet.prototype.alertCommandResult = function( result) {
+  var alert = { message: 'Successful'}
+  alert.type = result.status === 'SUCCESS' ? 'success' : 'danger'
+  if( result.status !== 'SUCCESS') {
+    alert.message = 'ERROR: ' + result.status
+    if( result.error)
+      alert.message += ',  ' + result.error
+  }
+  this.alerts = [ alert ]
+}
+
+CommandSet.prototype.alertException = function( ex) {
+  var alert = {
+    type: 'danger',
+    message: ex.exception + ': ' + ex.message
+  }
+  this.alerts = [ alert ]
+}
+CommandSet.prototype.alertDanger = function( message) {
+  var alert = {
+    type: 'danger',
+    message: message
+  }
+  this.alerts = [ alert ]
+}
+
+CommandSet.prototype.getCommandTypes = function() {
+  var control = '',
+      setpoint = ''
+
+  this.commands.forEach( function( c) {
+    if( control.length === 0 && c.commandType === 'CONTROL') {
+      control = 'control'
+    } else {
+      if( setpoint.length === 0 && c.commandType.indexOf( 'SETPOINT') === 0)
+        setpoint = 'setpoint'
+    }
+  })
+
+  return control && setpoint ? control + ',' + setpoint : control + setpoint
+}
+
 
 
 /**
@@ -2408,7 +2711,6 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       $scope.points = []
       $scope.pointsFiltered = []
       $scope.selectAllState = 0
-      $scope.charts = []
 
       // Search
       $scope.searchText = ''
@@ -2472,274 +2774,6 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         }
       }
 
-      var CommandNotSelected = 'NotSelected',   // -> Selecting
-          CommandSelecting = 'Selecting',       // -> Selected, NotSelected (unauthorized or failure)
-          CommandSelected = 'Selected',         // -> Executing, NotSelected, Deselecting (user or timeout)
-          CommandDeselecting = 'Deselecting',   // -> Executing, NotSelected (user or timeout)
-          CommandExecuting = 'Executing'        // -> NotSelected (success or failure)
-      var CommandIcons = {
-        NotSelected: 'fa fa-chevron-right text-primary',
-        Selecting: 'fa fa-chevron-right fa-spin text-primary',
-        Selected: 'fa fa-chevron-left text-primary',
-        Deselecting: 'fa fa-chevron-left fa-spin text-primary',
-        Executing: 'fa fa-chevron-left text-primary'
-      }
-      var ExecuteIcons = {
-        NotSelected: '',
-        Selecting: '',
-        Selected: 'fa fa-sign-in',
-        Deselecting: 'fa fa-sign-in',
-        Executing: 'fa fa-refresh fa-spin'
-      }
-
-      function CommandSet( _point, _commands) {
-        // Control & Setpoint States
-
-
-        this.point = _point
-        this.commands = _commands
-        this.state = CommandNotSelected
-        this.lock = undefined
-        this.selectedCommand = undefined
-        this.commands.forEach( function( c) {
-          c.selectClasses = CommandIcons[ CommandNotSelected]
-          c.executeClasses = ExecuteIcons[ CommandNotSelected]
-          c.isSetpoint = c.commandType.indexOf('SETPOINT') === 0
-          c.blockClasses = 'fa fa-unlock'
-          if( c.isSetpoint) {
-            c.setpointValue = undefined
-
-            switch( c.commandType) {
-              case 'SETPOINT_INT':
-                c.pattern = /^[+-]?\d+$/;
-                c.placeHolder = 'int'
-                break
-              case 'SETPOINT_DOUBLE':
-                c.pattern = /^[-+]?\d+(\.\d+)?$/;
-                c.placeHolder = 'decimal'
-                break
-              case 'SETPOINT_STRING':
-                c.pattern = undefined;
-                c.placeHolder = 'text'
-                break
-              default:
-                break
-            }
-
-          }
-
-        })
-      }
-
-      CommandSet.prototype.selectToggle = function( command) {
-        switch( this.state) {
-          case CommandNotSelected: this.select( command); break;
-          case CommandSelecting:   break;
-          case CommandSelected:    this.deselectOptionSelect( command); break;
-          case CommandExecuting:   break;
-        }
-        this.point.ignoreRowClick = true
-      }
-
-      CommandSet.prototype.setState = function( state, command) {
-        console.log( 'setState from ' + this.state + ' to ' + state)
-        this.state = state
-        if( command) {
-          command.selectClasses = CommandIcons[this.state]
-          command.executeClasses = ExecuteIcons[this.state]
-          console.log( 'setState ' + this.state + ', command.classes ' + command.classes)
-        }
-      }
-
-      CommandSet.prototype.select = function( command) {
-        var self = this
-
-        if( this.state !== CommandNotSelected) {
-          console.error( 'CommandSet.select invalid state: ' + this.state)
-          return
-        }
-
-        self.setState( CommandSelecting, command)
-
-        var arg = {
-          accessMode: 'ALLOWED',
-          commandIds: [command.id]
-        }
-        rest.post( '/models/1/commandlock', arg, null, $scope,
-          function( data) {
-            self.lock = data
-            if( self.lock.expireTime) {
-              self.selectedCommand = command
-              self.setState( CommandSelected, command)
-
-              var delay = self.lock.expireTime - Date.now()
-              console.log( 'commandLock delay: ' + delay)
-              // It the clock for client vs server is off, we'll use a minimum delay.
-              delay = Math.max( delay, 10)
-              self.selectTimeout = $timeout(function () {
-                delete self.lock;
-                delete self.selectTimeout;
-                if( self.state === CommandSelected || self.state === CommandExecuting) {
-                  self.setState( CommandNotSelected, self.selectedCommand)
-                  self.selectedCommand = undefined
-                }
-              }, delay)
-            } else {
-              self.setState( CommandNotSelected, self.selectedCommand)
-              self.selectedCommand = undefined
-              self.alertDanger( 'Select failed. ' + data)
-            }
-          },
-          function( ex, statusCode, headers, config) {
-            console.log( 'CommandSet.select ' + ex)
-            self.alertException( ex)
-            self.setState( CommandNotSelected, command)
-          })
-      }
-
-      CommandSet.prototype.deselectModel = function() {
-        this.setState( CommandNotSelected, this.selectedCommand)
-        this.selectedCommand = undefined
-      }
-
-
-      CommandSet.prototype.deselectOptionSelect = function( command) {
-        var self = this
-
-        if( this.state !== CommandSelected) {
-          console.error( 'CommandSet.deselect invalid state: ' + this.state)
-          return
-        }
-
-        self.setState( CommandDeselecting, self.selectedCommand)
-
-        rest.delete( '/models/1/commandlock/' + self.lock.id, null, $scope,
-          function( data) {
-            delete self.lock;
-            var saveCommand = self.selectedCommand
-            self.deselectModel()
-            if( saveCommand !== command) {
-              self.select( command)
-            }
-          },
-          function( ex, statusCode, headers, config) {
-            console.log( 'CommandSet.deselect ' + ex)
-            self.deselectModel()
-            self.alertException( ex)
-
-            var saveCommand = self.selectedCommand
-            self.selectedCommand = undefined
-            if( saveCommand !== command) {
-              self.select( command)
-            }
-          })
-      }
-
-      function getSetpointInt( value) {
-        var n = Number( value)
-
-      }
-      CommandSet.prototype.execute = function( command, commandIndex) {
-        var self = this
-
-        if( this.state !== CommandSelected) {
-          console.error( 'CommandSet.execute invalid state: ' + this.state)
-          return
-        }
-
-        var args = {
-          commandLockId: self.lock.id
-        }
-
-        if( command.isSetpoint) {
-          if( command.pattern && !command.pattern.test( command.setpointValue)) {
-            switch( command.commandType) {
-              case 'SETPOINT_INT': self.alertDanger( 'Setpoint needs to be an integer value.'); return;
-              case 'SETPOINT_DOUBLE': self.alertDanger( 'Setpoint needs to be a floating point value.'); return;
-              default:
-                console.error( 'Setpoint has unknown error, "' + command.setpointValue + '" for command type ' + command.commandType);
-            }
-          }
-
-          switch( command.commandType) {
-            case 'SETPOINT_INT':
-              args.setpoint = { intValue: Number( command.setpointValue)}
-              break
-            case 'SETPOINT_DOUBLE':
-              args.setpoint = { doubleValue: Number( command.setpointValue)}
-              break
-            case 'SETPOINT_STRING':
-              args.setpoint = { stringValue: command.setpointValue}
-              break
-            default:
-              break
-          }
-        }
-
-        self.setState( CommandExecuting, command)
-
-
-        rest.post( '/models/1/commands/' + command.id, args, null, $scope,
-          function( commandResult) {
-            self.alertCommandResult( commandResult)
-            self.deselectModel()
-          },
-          function( ex, statusCode, headers, config) {
-            console.log( 'CommandSet.execute ' + ex)
-            self.deselectModel()
-            self.alertException( ex)
-          })
-
-        this.point.ignoreRowClick = true
-      }
-
-      CommandSet.prototype.closeAlert = function( index) {
-        if( this.alerts)
-          this.alerts.splice( index, 1)
-        this.point.ignoreRowClick = true
-      }
-
-      CommandSet.prototype.alertCommandResult = function( result) {
-        var alert = { message: 'Successful'}
-        alert.type = result.status === 'SUCCESS' ? 'success' : 'danger'
-        if( result.status !== 'SUCCESS') {
-          alert.message = 'ERROR: ' + result.status
-          if( result.error)
-            alert.message += ',  ' + result.error
-        }
-        this.alerts = [ alert ]
-      }
-
-      CommandSet.prototype.alertException = function( ex) {
-        var alert = {
-          type: 'danger',
-          message: ex.exception + ': ' + ex.message
-        }
-        this.alerts = [ alert ]
-      }
-      CommandSet.prototype.alertDanger = function( message) {
-        var alert = {
-          type: 'danger',
-          message: message
-        }
-        this.alerts = [ alert ]
-      }
-
-      CommandSet.prototype.getCommandTypes = function() {
-        var control = '',
-            setpoint = ''
-
-        this.commands.forEach( function( c) {
-          if( control.length === 0 && c.commandType === 'CONTROL') {
-            control = 'control'
-          } else {
-            if( setpoint.length === 0 && c.commandType.indexOf( 'SETPOINT') === 0)
-              setpoint = 'setpoint'
-          }
-        })
-
-        return control && setpoint ? control + ',' + setpoint : control + setpoint
-      }
 
 
       $scope.rowClasses = function( point) {
@@ -2926,6 +2960,21 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         }
       ]
 
+      var CommandRest = {
+        select: function ( accessMode, commandIds, success, failure) {
+          var arg = {
+            accessMode: accessMode,
+            commandIds: commandIds
+          }
+          rest.post( '/models/1/commandlock', arg, null, $scope, success, failure)
+        },
+        deselect: function( lockId, success, failure) {
+          rest.delete( '/models/1/commandlock/' + lockId, null, $scope, success, failure)
+        },
+        execute: function( commandId, success, failure) {
+          rest.post( '/models/1/commands/' + commandId, success, failure)
+        }
+      }
 
       /**
        * UUIDs are 36 characters long. The URL max is 2048
@@ -2940,7 +2989,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
           for( var pointId in data) {
             point = findPoint( pointId)
             if( point) {
-              point.commandSet = new CommandSet( point, data[pointId])
+              point.commandSet = new CommandSet( point, data[pointId], CommandRest, $timeout)
               point.commandTypes = point.commandSet.getCommandTypes().toLowerCase()
               console.log( 'commandTypes: ' + point.commandTypes)
             }
@@ -2998,7 +3047,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/measurement/measurements.html',
+      templateUrl: 'greenbus.views.template/measurement/measurements.html',
       controller: 'gbMeasurementsController'
     }
   }).
@@ -3273,7 +3322,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'greenbus.views.res
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/navigation/navBarTop.html',
+      templateUrl: 'greenbus.views.template/navigation/navBarTop.html',
       controller: 'NavBarTopController'
     }
   }).
@@ -3299,7 +3348,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'greenbus.views.res
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/navigation/navList.html',
+      templateUrl: 'greenbus.views.template/navigation/navList.html',
       controller: 'NavListController'
     }
   }).
@@ -3547,7 +3596,7 @@ angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'template/notification/notification.html',
+      templateUrl: 'greenbus.views.template/notification/notification.html',
       controller: 'gbNotificationController'
     }
   })
@@ -4088,7 +4137,7 @@ angular.module('greenbus.views.selection', []).
              model  : '=',
              notify: '&'
       },
-      templateUrl: 'template/selection/selectAll.html',
+      templateUrl: 'greenbus.views.template/selection/selectAll.html',
       controller: 'gbSelectAllController',
       link: function(scope, element, attrs, controller) {
         var selectItem = attrs.selectItem || 'selectItem'
@@ -4445,8 +4494,8 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
   }]);
 
-angular.module("template/chart/chart.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/chart/chart.html",
+angular.module("greenbus.views.template/chart/chart.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/chart/chart.html",
     "<div class=\"gb-chart\" style=\"width: 100%; height: 100%; margin: 0\">\n" +
     "    <div class=\"gb-win\" >\n" +
     "        <div class=\"gb-win-titlebar clearfix\">\n" +
@@ -4477,8 +4526,8 @@ angular.module("template/chart/chart.html", []).run(["$templateCache", function(
     "");
 }]);
 
-angular.module("template/chart/charts.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/chart/charts.html",
+angular.module("greenbus.views.template/chart/charts.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/chart/charts.html",
     "<div class=\"gb-chart\" ng-repeat=\"chart in charts\">\n" +
     "    <div class=\"gb-win\" >\n" +
     "        <div class=\"gb-win-titlebar clearfix\">\n" +
@@ -4507,8 +4556,8 @@ angular.module("template/chart/charts.html", []).run(["$templateCache", function
     "");
 }]);
 
-angular.module("template/endpoint/endpoints.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/endpoint/endpoints.html",
+angular.module("greenbus.views.template/endpoint/endpoints.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/endpoint/endpoints.html",
     "<div>\n" +
     "    <h3>Endpoints</h3>\n" +
     "\n" +
@@ -4539,8 +4588,8 @@ angular.module("template/endpoint/endpoints.html", []).run(["$templateCache", fu
     "");
 }]);
 
-angular.module("template/ess/esses.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/ess/esses.html",
+angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/ess/esses.html",
     "<div>\n" +
     "    <div class=\"row\">\n" +
     "        <div class=\"col-md-5\">\n" +
@@ -4597,8 +4646,8 @@ angular.module("template/ess/esses.html", []).run(["$templateCache", function($t
     "");
 }]);
 
-angular.module("template/event/alarms.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/event/alarms.html",
+angular.module("greenbus.views.template/event/alarms.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/event/alarms.html",
     "<div>\n" +
     "    <!--<div class=\"row\">-->\n" +
     "        <!--<div class=\"col-md-12\">-->\n" +
@@ -4656,11 +4705,11 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "                </td>\n" +
     "                <td ng-click=\"acknowledge(alarm)\" class=\"gb-alarm-btn-xs\"><div ng-class=\"alarm.state | alarmAckButtonClass\"><i ng-class=\"alarm.state | alarmAckClass: alarm.updateState\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmAckTitle}}\"></i></div></td>\n" +
     "                <td ng-click=\"silence(alarm)\" class=\"gb-alarm-btn-xs\"><div ng-class=\"alarm.state | alarmAudibleButtonClass\"><i ng-class=\"alarm.state | alarmAudibleClass: alarm.updateState\" style=\"min-width: 1.1em;\" title=\"{{alarm.state | alarmAudibleTitle}}\"></i></div></td>\n" +
-    "                <td>{{alarm.event.eventType}}</td>\n" +
-    "                <td>{{alarm.event.severity}}</td>\n" +
-    "                <td>{{alarm.event.agent}}</td>\n" +
-    "                <td>{{alarm.event.message}}</td>\n" +
-    "                <td>{{alarm.event.time | date:\"h:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
+    "                <td>{{alarm.eventType}}</td>\n" +
+    "                <td>{{alarm.severity}}</td>\n" +
+    "                <td>{{alarm.agent}}</td>\n" +
+    "                <td>{{alarm.message}}</td>\n" +
+    "                <td>{{alarm.time | date:\"h:mm:ss a, MM-dd-yyyy\"}}</td>\n" +
     "            </tr>\n" +
     "            </tbody>\n" +
     "        </table>\n" +
@@ -4669,8 +4718,8 @@ angular.module("template/event/alarms.html", []).run(["$templateCache", function
     "");
 }]);
 
-angular.module("template/event/events.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/event/events.html",
+angular.module("greenbus.views.template/event/events.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/event/events.html",
     "<div>\n" +
     "    <h3>Events</h3>\n" +
     "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
@@ -4701,8 +4750,8 @@ angular.module("template/event/events.html", []).run(["$templateCache", function
     "");
 }]);
 
-angular.module("template/measurement/measurements.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/measurement/measurements.html",
+angular.module("greenbus.views.template/measurement/measurements.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/measurement/measurements.html",
     "<div>\n" +
     "    <div class=\"row\">\n" +
     "        <div class=\"col-md-5\">\n" +
@@ -4853,8 +4902,8 @@ angular.module("template/measurement/measurements.html", []).run(["$templateCach
     "");
 }]);
 
-angular.module("template/navigation/navBarTop.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/navigation/navBarTop.html",
+angular.module("greenbus.views.template/navigation/navBarTop.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/navigation/navBarTop.html",
     "<div class=\"navbar navbar-inverse navbar-fixed-top\" role=\"navigation\">\n" +
     "  <div class=\"container\">\n" +
     "\n" +
@@ -4888,8 +4937,8 @@ angular.module("template/navigation/navBarTop.html", []).run(["$templateCache", 
     "</div>");
 }]);
 
-angular.module("template/navigation/navList.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/navigation/navList.html",
+angular.module("greenbus.views.template/navigation/navList.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/navigation/navList.html",
     "<ul class=\"nav nav-list\">\n" +
     "    <li ng-repeat=\"item in navItems\" ng-class=\"getClass(item)\" ng-switch=\"item.type\">\n" +
     "        <a ng-switch-when=\"item\" href=\"{{ item.route }}\">{{ item.label }}</a>\n" +
@@ -4898,15 +4947,15 @@ angular.module("template/navigation/navList.html", []).run(["$templateCache", fu
     "</ul>");
 }]);
 
-angular.module("template/notification/notification.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/notification/notification.html",
+angular.module("greenbus.views.template/notification/notification.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/notification/notification.html",
     "<div class=\"gb-notification-container\">\n" +
     "    <div class=\"gb-notification-message\" ng-repeat=\"notification in notifications\">{{ notification }}</div>\n" +
     "</div>");
 }]);
 
-angular.module("template/selection/selectAll.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("template/selection/selectAll.html",
+angular.module("greenbus.views.template/selection/selectAll.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/selection/selectAll.html",
     "<button class=\"btn btn-default\" ng-click=\"selectAll()\">\n" +
     "    <div class=\"gb-checkbox-container\" role=\"checkbox\" aria-labelledby=\":2f\" dir=\"ltr\" aria-checked=\"true\" tabindex=\"-1\">\n" +
     "        <i ng-class=\"selectAllState | selectItemClass\"></i>\n" +
