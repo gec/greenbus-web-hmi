@@ -71,7 +71,7 @@ libraryDependencies ++= Seq(
   "org.webjars" % "angular-ui-bootstrap" % "0.12.0" exclude("org.webjars", "angularjs"),
   "org.webjars" % "angular-ui-utils" % "0.1.1" exclude("org.webjars", "angularjs"),
   "org.webjars" % "momentjs" % "2.8.3",
-  "org.totalgrid.reef" % "reef-client" % "0.6.0.M3-SNAPSHOT" withSources(),
+  "org.totalgrid.reef" % "reef-client" % "0.6.0.M4-SNAPSHOT" withSources(),
   "org.totalgrid.msg" % "msg-qpid" % "0.0.1-SNAPSHOT",
   "io.greenbus.web" %% "web-core" % "0.3.0-SNAPSHOT" withSources()
 )
