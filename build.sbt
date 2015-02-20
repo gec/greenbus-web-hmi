@@ -17,10 +17,6 @@ lazy val root = (project in file("."))
     scalaVersion := "2.10.4"
   )
 
-val reefVersion = "0.6.0.M3-SNAPSHOT"
-
-val msgVersion  = "0.0.1-SNAPSHOT"
-
 lazy val appPublishMavenStyle = true
 
 lazy val appPublishArtifactInTest = false

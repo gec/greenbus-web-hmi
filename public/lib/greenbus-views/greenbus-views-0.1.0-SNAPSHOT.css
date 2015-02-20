@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-02-12
+ * Version: 0.1.0-SNAPSHOT - 2015-02-19
  * License: Apache Version 2.0
  */
 
@@ -29,6 +29,17 @@ th.gb-alarm-btn-xs {
   min-width: 27px;
 }
 
+.table-topless thead>tr:first-child>th, .table-topless tbody>tr:first-child>th, .table-topless thead>tr:first-child>td, .table-topless tbody>tr:first-child>td {
+  border-top: 0;
+}
+.table tbody>tr>td.event-severity {
+  background-color: #f0f0f0;
+  font-weight: bold;
+}
+td.event-agent {
+  background-color: #f0f0f0;
+}
+
 .icon-spin {
   -animation: icon-spin1 .7s infinite linear;
   -webkit-animation: icon-spin2 .7s infinite linear;
@@ -49,8 +60,9 @@ th.gb-alarm-btn-xs {
 .validity-questionable {color: #f57900; font-size:1.4em;}
 .validity-notloaded {font-size:1.4em;}
 
-.gb-alarm-ack {color: darkgray}
 .gb-alarm-unack {color: red}
+.gb-alarm-ack {color: darkgray}
+.gb-alarm-remove {}
 
 .gb-comms-enabled-up {color: green}
 .gb-comms-enabled-down {color: #b22222}
