@@ -15,9 +15,9 @@ GET           /apps/operator/                                         controller
 GET           /apps/chart/popout                                      controllers.Application.appsChartPopout
 GET           /apps/:app/menus/:menu                                  controllers.Application.getAppsMenus( app: String, menu: String)
 
-GET           /models/:modelId/alarms                                 controllers.Application.getAlarms( modelId: String, states: List[String], ag: List[String], et: List[String], sv: List[Int], sb: List[String], limit: Int ?= 200, startAfterId: Option[String])
+GET           /models/:modelId/alarms                                 controllers.Application.getAlarms( modelId: String, states: List[String], ag: List[String], et: List[String], sv: List[Int], sb: List[String], limit: Int ?= 200, startAfterId: Option[String], latest: Boolean ?= true)
 POST          /models/:modelId/alarms                                 controllers.Application.postAlarms( modelId: String)
-GET           /models/:modelId/events                                 controllers.Application.getEvents( modelId: String, ag: List[String], et: List[String], sv: List[Int], sb: List[String], limit: Int ?= 200, startAfterId: Option[String])
+GET           /models/:modelId/events                                 controllers.Application.getEvents( modelId: String, ag: List[String], et: List[String], sv: List[Int], sb: List[String], limit: Int ?= 200, startAfterId: Option[String], latest: Boolean ?= true)
 
 GET           /models/:modelId/equipment                              controllers.Application.getEquipmentRoots( modelId: String, rootTypes: List[String], childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
 GET           /models/:modelId/equipment/:entityId                    controllers.Application.getEquipment( modelId: String, entityId: String, childTypes: List[String], depth: Int ?= 1, limit: Int ?= 200)
