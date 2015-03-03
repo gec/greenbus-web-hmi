@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-03-02
+ * Version: 0.1.0-SNAPSHOT - 2015-03-03
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -1948,7 +1948,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
      */
     function pageDo( startAfterId, limit, success, failure, latest) {
 
-      var url = '/models/1/events?startAfterId=' + startAfterId + '&limit=' + limit
+      var url = '/models/1/alarms?startAfterId=' + startAfterId + '&limit=' + limit
       if( latest === false)
         url +=  '&latest=false'
 
@@ -1957,7 +1957,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
           success( data)
         },
         function( ex, statusCode, headers, config){
-          console.log( 'eventRest ERROR pageNext with URL: "' + url + '". Status: ' + statusCode + 'Exception: ' + ex.exception + ' - ' + ex.message)
+          console.log( 'alarmRest ERROR pageNext with URL: "' + url + '". Status: ' + statusCode + 'Exception: ' + ex.exception + ' - ' + ex.message)
           failure( startAfterId, limit, ex, statusCode)
         }
       )
@@ -2051,19 +2051,19 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
      * Operator is updating one or more alarm states
      * @param ids Alarm IDs
      * @param newState
-     * @param gbAlarms
+     * @param subscriptionView
      */
-    function updateRequest( gbAlarms, ids, newState) {
+    function updateRequest( subscriptionView, ids, newState) {
       if( ! ids || ids.length === 0)
         return false
 
-      return alarmRest.update( ids, newState, gbAlarms, gbAlarms.onMessage, gbAlarms.onUpdateFailure)
+      return alarmRest.update( ids, newState, subscriptionView, subscriptionView.onMessage, subscriptionView.onUpdateFailure)
     }
 
-    function silence( gbAlarms, alarm) {
+    function silence( subscriptionView, alarm) {
       var requestSucceeded = false
       if( alarm.state === 'UNACK_AUDIBLE') {
-        if( updateRequest( gbAlarms, [alarm.id], 'UNACK_SILENT')) {
+        if( updateRequest( subscriptionView, [alarm.id], 'UNACK_SILENT')) {
           alarm._updateState = 'updating' // TODO: what if already updating?
           requestSucceeded = true
         }
@@ -2071,10 +2071,10 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       return requestSucceeded
     }
 
-    function acknowledge( gbAlarms, alarm) {
+    function acknowledge( subscriptionView, alarm) {
       var requestSucceeded = false
       if( alarm.state === 'UNACK_AUDIBLE' || alarm.state === 'UNACK_SILENT') {
-        if( updateRequest( gbAlarms, [alarm.id], 'ACKNOWLEDGED')) {
+        if( updateRequest( subscriptionView, [alarm.id], 'ACKNOWLEDGED')) {
           alarm._updateState = 'updating' // TODO: what if already updating?
           requestSucceeded = true
         }
@@ -2082,10 +2082,10 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
       return requestSucceeded
     }
 
-    function remove( gbAlarms, alarm) {
+    function remove( subscriptionView, alarm) {
       var requestSucceeded = false
       if( alarm.state === 'ACKNOWLEDGED' && alarm._updateState !== 'removing') {
-        if( updateRequest( gbAlarms, [alarm.id], 'REMOVED')) {
+        if( updateRequest( subscriptionView, [alarm.id], 'REMOVED')) {
           alarm._updateState = 'removing' // TODO: what if already updating?
           requestSucceeded = true
         }
@@ -2112,28 +2112,28 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     function getId( alarm) { return alarm.id }
 
 
-    function updateSelected( gbAlarms, notification, filter, newState, newUpdateState, allSelectedAreNotValidMessage, someSelectedAreNotValidMessage) {
+    function updateSelected( subscriptionView, notification, filter, newState, newUpdateState, allSelectedAreNotValidMessage, someSelectedAreNotValidMessage) {
       var requestSucceeded = false,
-          selectedAndValid = gbAlarms.filter( filter)
+          selectedAndValid = subscriptionView.filter( filter)
 
       if( selectedAndValid.length > 0) {
         var ids = selectedAndValid.map( getId)
         selectedAndValid.forEach( function( a) { a._updateState = newUpdateState})
         if( someSelectedAreNotValidMessage) {
-          var selected = gbAlarms.filter( filters.isSelected)
+          var selected = subscriptionView.filter( filters.isSelected)
           if( selected.length > selectedAndValid.length)
             notification( 'info', someSelectedAreNotValidMessage, 5000)
         }
-        requestSucceeded = updateRequest( gbAlarms, ids, newState)
+        requestSucceeded = updateRequest( subscriptionView, ids, newState)
       } else {
         notification( 'info', allSelectedAreNotValidMessage, 5000)
       }
       return requestSucceeded
     }
 
-    function silenceSelected( gbAlarms, notification) { return updateSelected( gbAlarms, notification, filters.isSelectedAndUnackAudible, 'UNACK_SILENT', 'updating', 'No audible alarms are selected.') }
-    function acknowledgeSelected( gbAlarms, notification) { return updateSelected( gbAlarms, notification, filters.isSelectedAndUnack, 'ACKNOWLEDGED', 'updating', 'No unacknowledged alarms are selected.') }
-    function removeSelected( gbAlarms, notification) { return updateSelected( gbAlarms, notification, filters.isSelectedAndRemovable, 'REMOVED', 'removing', 'No acknowledged alarms are selected.', 'Unacknowledged alarms were not removed.') }
+    function silenceSelected( subscriptionView, notification) { return updateSelected( subscriptionView, notification, filters.isSelectedAndUnackAudible, 'UNACK_SILENT', 'updating', 'No audible alarms are selected.') }
+    function acknowledgeSelected( subscriptionView, notification) { return updateSelected( subscriptionView, notification, filters.isSelectedAndUnack, 'ACKNOWLEDGED', 'updating', 'No unacknowledged alarms are selected.') }
+    function removeSelected( subscriptionView, notification) { return updateSelected( subscriptionView, notification, filters.isSelectedAndRemovable, 'REMOVED', 'removing', 'No acknowledged alarms are selected.', 'Unacknowledged alarms were not removed.') }
 
 
     /**
@@ -2149,15 +2149,53 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
   }]).
 
-  controller('gbAlarmsController', ['$scope', '$attrs', 'rest', 'subscription', 'alarmWorkflow', '$timeout', function( $scope, $attrs, rest, subscription, alarmWorkflow, $timeout) {
+  controller('gbAlarmsController', ['$scope', '$attrs', 'rest', 'subscription', 'alarmWorkflow', 'alarmRest', '$timeout', function( $scope, $attrs, rest, subscription, alarmWorkflow, alarmRest, $timeout) {
     $scope.loading = true
     $scope.limit = Number( $attrs.limit || 20);
-    $scope.alarms = []
-    var gbAlarms = new GBAlarms( $scope.limit, $scope.alarms)
+    var subscriptionView = new AlarmSubscriptionView( $scope.limit, $scope.limit * 4)
+    $scope.alarms = subscriptionView.items
+    // Paging
+    $scope.pageState = SubscriptionViewState.CURRENT
+    $scope.lastPage = false
+    $scope.newItems = undefined
+    // Alarm workflow
     $scope.selectAllState = 0
     $scope.searchText = ''
     $scope.notification = undefined // {type: 'danger', message: ''}  types: success, info, warning, danger
     $scope.notificationTask = undefined // $timeout task
+
+    // Paging functions
+    //
+    function updatePageState( state) {
+      $scope.pageState = state
+      if( state === SubscriptionViewState.CURRENT)
+        $scope.newItems = undefined
+    }
+    function pageNotify( state, pageCacheOffset, lastPage, oldItems) {
+      updatePageState( state)
+      $scope.lastPage = lastPage
+      oldItems.forEach( function( i) {
+        if( i._checked)
+          $scope.selectItem( i, 0) // 0: unchecked. Selection needs to decrement its select count.
+      })
+    }
+    $scope.pageFirst = function() {
+      var state = subscriptionView.pageFirst()
+      updatePageState( state)
+      $scope.lastPage = false // TODO: what if there is only one page?
+    }
+    $scope.pageNext = function() {
+      var state = subscriptionView.pageNext( alarmRest, pageNotify)
+      updatePageState( state)
+    }
+    $scope.pagePrevious = function() {
+      var state = subscriptionView.pagePrevious( alarmRest, pageNotify)
+      updatePageState( state)
+      // TODO: We're assuming that if previous was successful, there must be a next page. This may not always be true, especially with search!
+      if( state !== SubscriptionViewState.PAGING_PREVIOUS && $scope.lastPage)
+        $scope.lastPage = false
+    }
+
 
     function setNotification( typ, message, timeout) {
       if( $scope.notificationTask) {
@@ -2176,13 +2214,13 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
 
-    $scope.silence = function( alarm) { alarmWorkflow.silence( gbAlarms, alarm) }
-    $scope.acknowledge = function( alarm) { alarmWorkflow.acknowledge( gbAlarms, alarm) }
-    $scope.remove = function( alarm) { alarmWorkflow.remove( gbAlarms, alarm) }
+    $scope.silence = function( alarm) { alarmWorkflow.silence( subscriptionView, alarm) }
+    $scope.acknowledge = function( alarm) { alarmWorkflow.acknowledge( subscriptionView, alarm) }
+    $scope.remove = function( alarm) { alarmWorkflow.remove( subscriptionView, alarm) }
 
-    $scope.silenceSelected = function() { alarmWorkflow.silenceSelected( gbAlarms, setNotification) }
-    $scope.acknowledgeSelected = function() { alarmWorkflow.acknowledgeSelected( gbAlarms, setNotification) }
-    $scope.removeSelected = function() { alarmWorkflow.removeSelected( gbAlarms, setNotification) }
+    $scope.silenceSelected = function() { alarmWorkflow.silenceSelected( subscriptionView, setNotification) }
+    $scope.acknowledgeSelected = function() { alarmWorkflow.acknowledgeSelected( subscriptionView, setNotification) }
+    $scope.removeSelected = function() { alarmWorkflow.removeSelected( subscriptionView, setNotification) }
 
     // Called by selection
     $scope.selectAllChanged = function( state) {
@@ -2191,11 +2229,14 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     function onMessage( subscriptionId, type, alarms) {
-      var removedAlarms = gbAlarms.onMessage( alarms)
+      var removedAlarms = subscriptionView.onMessage( alarms)
       removedAlarms.forEach( function( a) {
         if( a._checked)
           $scope.selectItem( a, 0) // 0: unchecked. Selection needs to decrement its select count.
       })
+
+      if( $scope.pageState !== SubscriptionViewState.CURRENT)
+        $scope.newItems = 'New alarms'
 
       $scope.loading = false
       $scope.$digest()
@@ -2220,41 +2261,43 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     $scope.limit = Number( $attrs.limit || 20);
     var subscriptionView = new SubscriptionView( $scope.limit, $scope.limit * 4)
     $scope.events = subscriptionView.items
-    $scope.paged = false
+    $scope.pageState = SubscriptionViewState.CURRENT
     $scope.lastPage = false
-    $scope.newEvents = undefined
+    $scope.newItems = undefined
 
-    function setPaged( paged) {
-      $scope.paged = paged
-      if( ! paged)
-        $scope.newEvents = undefined
+    // Paging functions
+    //
+    function updatePageState( state) {
+      $scope.pageState = state
+      if( state === SubscriptionViewState.CURRENT)
+        $scope.newItems = undefined
     }
-
-    function pageNotify( paged, pageCacheOffset, lastPage) {
-      setPaged( paged)
+    function pageNotify( state, pageCacheOffset, lastPage, oldItems) {
+      updatePageState( state)
       $scope.lastPage = lastPage
     }
-
     $scope.pageFirst = function() {
-      subscriptionView.pageFirst()
-      setPaged( false)
-      $scope.lastPage = false
+      var state = subscriptionView.pageFirst()
+      updatePageState( state)
+      $scope.lastPage = false // TODO: what if there is only one page?
     }
     $scope.pageNext = function() {
-      subscriptionView.pageNext( eventRest, pageNotify)
-      setPaged( subscriptionView.pageCacheOffset !== 0)
+      var state = subscriptionView.pageNext( eventRest, pageNotify)
+      updatePageState( state)
     }
     $scope.pagePrevious = function() {
-      var paged = subscriptionView.pagePrevious( eventRest, pageNotify)
-      setPaged( subscriptionView.pageCacheOffset !== 0)
-      if( paged === 'paged' && $scope.lastPage)
+      var state = subscriptionView.pagePrevious( eventRest, pageNotify)
+      updatePageState( state)
+      // TODO: We're assuming that if previous was successful, there must be a next page. This may not always be true, especially with search!
+      if( state !== SubscriptionViewState.PAGING_PREVIOUS && $scope.lastPage)
         $scope.lastPage = false
     }
 
+
     $scope.onEvent = function( subscriptionId, type, event) {
       subscriptionView.onMessage( event)
-      if( $scope.paged)
-        $scope.newEvents = 'New events'
+      if( $scope.pageState !== SubscriptionViewState.CURRENT)
+        $scope.newItems = 'New events'
       $scope.loading = false
       $scope.$digest()
     }
@@ -2430,13 +2473,19 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
   }).
 
   filter('pagePreviousClass', function() {
-    return function(paged) {
-      return paged ? 'btn btn-default' : 'btn btn-default disabled'
+    return function(pageState) {
+      return pageState !== SubscriptionViewState.PAGED && pageState !== SubscriptionViewState.NO_ITEMS ? 'btn btn-default disabled' : 'btn btn-default'
     };
   }).
   filter('pageNextClass', function() {
-    return function(lastPage) {
-      return lastPage ? 'btn btn-default disabled' : 'btn btn-default'
+    return function(pageState, lastPage) {
+      return lastPage || pageState === SubscriptionViewState.PAGING_NEXT || pageState === SubscriptionViewState.NO_ITEMS ? 'btn btn-default disabled' : 'btn btn-default'
+    };
+  }).
+  filter('pagingIcon', function() {
+    return function(pageState, direction) {
+      var spin = (direction === 'right' && pageState === SubscriptionViewState.PAGING_NEXT) || (direction === 'left' && pageState === SubscriptionViewState.PAGING_PREVIOUS)
+      return spin ? 'fa fa-spin fa-chevron-' + direction : 'fa fa-chevron-' + direction
     };
   }).
   filter('alarmAckClass', function() {
@@ -2644,6 +2693,10 @@ SubscriptionCache = (function() {
     return this.itemAboveIsEarlier(item, index) || this.itemBelowIsLater(item, index);
   };
 
+  SubscriptionCache.prototype.shouldRemoveItemOnUpdate = function(item) {
+    return false;
+  };
+
   SubscriptionCache.prototype.convertInsertActionToIncludeRemove = function(item, index, action) {
     if (action.type === SubscriptionCacheAction.INSERT) {
       return {
@@ -2666,7 +2719,14 @@ SubscriptionCache = (function() {
     angular.extend(item, update);
     index = this.itemStore.indexOf(item);
     if (index >= 0) {
-      if (this.itemIsOutOfOrder(item, index)) {
+      if (this.shouldRemoveItemOnUpdate(item)) {
+        this.itemStore.splice(index, 1);
+        return {
+          type: SubscriptionCacheAction.REMOVE,
+          from: index,
+          item: item
+        };
+      } else if (this.itemIsOutOfOrder(item, index)) {
         this.itemStore.splice(index, 1);
         action = this.insert(item);
         return this.convertInsertActionToIncludeRemove(item, index, action);
@@ -2736,11 +2796,28 @@ SubscriptionCache = (function() {
     return -1;
   };
 
+  SubscriptionCache.prototype.getItemById = function(id) {
+    return this.itemIdMap[id];
+  };
+
   return SubscriptionCache;
 
 })();
 
 //# sourceMappingURL=SubscriptionCache.js.map
+
+var AlarmSubscriptionView, SubscriptionView, SubscriptionViewState,
+  bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+  hasProp = {}.hasOwnProperty;
+
+SubscriptionViewState = {
+  CURRENT: 0,
+  PAGING_NEXT: 1,
+  PAGING_PREVIOUS: 2,
+  PAGED: 3,
+  NO_ITEMS: 4
+};
 
 
 /*
@@ -2759,10 +2836,6 @@ SubscriptionCache = (function() {
                   Each item needs a 'time' property which holds a Javascript Date.
   @constructor
  */
-var SubscriptionView,
-  bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
-  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
-  hasProp = {}.hasOwnProperty;
 
 SubscriptionView = (function(superClass) {
   extend(SubscriptionView, superClass);
@@ -2780,12 +2853,11 @@ SubscriptionView = (function(superClass) {
     if (this.items.length > this.viewSize) {
       this.items.splice(this.viewSize, this.items.length - this.viewSize);
     }
-    this.paged = false;
+    this.state = SubscriptionViewState.CURRENT;
     this.pageCacheOffset = 0;
     this.backgrounded = false;
     this.pagePending = void 0;
-    this.pagePendingCache = void 0;
-    this.pagePendingNotify = void 0;
+    this.previousPageCache = void 0;
   }
 
   SubscriptionView.prototype.onMessage = function(item) {
@@ -2825,9 +2897,9 @@ SubscriptionView = (function(superClass) {
       case SubscriptionCacheAction.UPDATE:
         return this.actionUpdate(action);
       case SubscriptionCacheAction.INSERT:
-        return this.actionInsert(action);
+        return this.actionInsert(action.item, action.at);
       case SubscriptionCacheAction.REMOVE:
-        return this.actionRemove(action);
+        return this.actionRemove(action.item, action.from);
       case SubscriptionCacheAction.MOVE:
         return this.actionMove(action);
       case SubscriptionCacheAction.TRIM:
@@ -2837,14 +2909,23 @@ SubscriptionView = (function(superClass) {
 
   SubscriptionView.prototype.actionUpdate = function(action) {};
 
-  SubscriptionView.prototype.actionMove = function(action) {};
+  SubscriptionView.prototype.actionMove = function(action) {
+    this.actionRemove(action.item, action.from);
+    return this.actionInsert(action.item, action.to);
+  };
 
-  SubscriptionView.prototype.actionTrim = function(action) {};
+  SubscriptionView.prototype.actionTrim = function(action) {
+    var trimAt;
+    trimAt = action.at - this.pageCacheOffset;
+    if (trimAt <= 0) {
+      return this.pageCacheOffset = -1;
+    }
+  };
 
-  SubscriptionView.prototype.actionRemove = function(action) {
+  SubscriptionView.prototype.actionRemove = function(item, from) {
     var removeAt, removed;
     removed = void 0;
-    removeAt = action.at - this.pageCacheOffset;
+    removeAt = from - this.pageCacheOffset;
     if (removeAt >= 0 && removeAt < this.viewSize) {
       removed = this.items[removeAt];
       this.items.splice(removeAt, 1);
@@ -2854,11 +2935,10 @@ SubscriptionView = (function(superClass) {
     return removed;
   };
 
-  SubscriptionView.prototype.actionInsert = function(action) {
-    var insertAt;
-    insertAt = action.at - this.pageCacheOffset;
+  SubscriptionView.prototype.actionInsert = function(item, insertAt) {
+    insertAt = insertAt - this.pageCacheOffset;
     if ((this.pageCacheOffset === 0 && insertAt === 0) || (insertAt > 0 && insertAt < this.viewSize)) {
-      this.items.splice(insertAt, 0, action.item);
+      this.items.splice(insertAt, 0, item);
     } else if (insertAt <= 0) {
       this.pageCacheOffset += 1;
     }
@@ -2879,41 +2959,53 @@ SubscriptionView = (function(superClass) {
     }
   };
 
+  SubscriptionView.prototype.updateState = function() {
+    return this.state = (function() {
+      switch (false) {
+        case this.items.length !== 0:
+          return SubscriptionViewState.NO_ITEMS;
+        case !(this.pageCacheOffset > 0):
+          return SubscriptionViewState.PAGED;
+        default:
+          return SubscriptionViewState.CURRENT;
+      }
+    }).call(this);
+  };
+
   SubscriptionView.prototype.pageSuccess = function(items) {
-    switch (this.pagePending) {
+    var oldItems, ref, ref1, ref2, ref3;
+    switch ((ref = this.pagePending) != null ? ref.direction : void 0) {
       case 'next':
-        if (this.pagePendingCache) {
-          items = this.pagePendingCache.concat(items);
+        if (this.pagePending.cache) {
+          items = this.pagePending.cache.concat(items);
         }
+        this.previousPageCache = this.items.slice(0);
         this.replaceItems(items);
         this.items.sort(function(a, b) {
           return b.time - a.time;
         });
-        this.pagePending = void 0;
-        this.pagePendingCache = void 0;
-        this.paged = true;
         this.pageCacheOffset = -1;
         this.onMessage(items);
-        if (this.pagePendingNotify) {
-          return this.pagePendingNotify(this.pageCacheOffset !== 0, this.pageCacheOffset, items.length < this.viewSize);
+        this.updateState();
+        if ((ref1 = this.pagePending) != null ? ref1.notify : void 0) {
+          this.pagePending.notify(this.state, this.pageCacheOffset, items.length < this.viewSize, this.previousPageCache);
         }
-        break;
+        return this.pagePending = void 0;
       case 'previous':
+        oldItems = this.items.slice(0);
         this.replaceItems(items);
         this.items.sort(function(a, b) {
           return b.time - a.time;
         });
-        this.pagePending = void 0;
-        this.pagePendingCache = void 0;
         this.onMessage(items);
         this.pageCacheOffset = this.indexOfId(this.items[0].id);
-        this.paged = this.pageCacheOffset !== 0;
-        if (this.pagePendingNotify) {
-          return this.pagePendingNotify(this.pageCacheOffset !== 0, this.pageCacheOffset, false);
+        this.updateState();
+        if ((ref2 = this.pagePending) != null ? ref2.notify : void 0) {
+          this.pagePending.notify(this.state, this.pageCacheOffset, false, oldItems);
         }
-        break;
+        return this.pagePending = void 0;
       default:
-        return console.log('SubscriptionView.pageSuccess but pagePending is ' + this.pagePending);
+        return console.log('SubscriptionView.pageSuccess but pagePending is ' + ((ref3 = this.pagePending) != null ? ref3.direction : void 0));
     }
   };
 
@@ -2926,23 +3018,26 @@ SubscriptionView = (function(superClass) {
     }
     switch (false) {
       case !(this.pageCacheOffset < 0):
-        this.pagePending = 'next';
-        this.pagePendingNotify = notify;
+        this.pagePending = {
+          direction: 'next',
+          notify: notify
+        };
         pageRest.pageNext(this.items[this.items.length - 1].id, this.viewSize, this.pageSuccess, this.pageFailure);
-        return 'pending';
+        return this.state = SubscriptionViewState.PAGING_NEXT;
       case !(this.pageCacheOffset + 2 * this.viewSize <= this.itemStore.length):
         this.pageCacheOffset += this.viewSize;
         this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
-        this.paged = true;
-        return 'paged';
+        return this.state = SubscriptionViewState.PAGED;
       default:
         nextPageOffset = this.pageCacheOffset + this.viewSize;
-        this.pagePendingCache = this.itemStore.slice(nextPageOffset, nextPageOffset + this.viewSize);
-        limit = this.viewSize - this.pagePendingCache.length;
-        this.pagePending = 'next';
-        this.pagePendingNotify = notify;
+        this.pagePending = {
+          direction: 'next',
+          notify: notify,
+          cache: this.itemStore.slice(nextPageOffset, nextPageOffset + this.viewSize)
+        };
+        limit = this.viewSize - this.pagePending.cache.length;
         pageRest.pageNext(this.items[this.items.length - 1].id, limit, this.pageSuccess, this.pageFailure);
-        return 'pending';
+        return this.state = SubscriptionViewState.PAGING_NEXT;
     }
   };
 
@@ -2951,22 +3046,27 @@ SubscriptionView = (function(superClass) {
       return 'pastPending';
     }
     switch (false) {
+      case !(this.pageCacheOffset < 0 && this.items.length === 0):
+        this.replaceItems(this.previousPageCache);
+        this.previousPageCache = void 0;
+        this.pageCacheOffset = this.indexOfId(this.items[0].id);
+        return this.updateState();
       case !(this.pageCacheOffset < 0):
-        this.pagePending = 'previous';
-        this.pagePendingNotify = notify;
+        this.pagePending = {
+          direction: 'previous',
+          notify: notify
+        };
         pageRest.pagePrevious(this.items[0].id, this.viewSize, this.pageSuccess, this.pageFailure);
-        return 'pending';
+        return this.state = SubscriptionViewState.PAGING_PREVIOUS;
       case this.pageCacheOffset !== 0:
-        this.paged = false;
-        return 'paged';
+        return this.state = SubscriptionViewState.CURRENT;
       default:
         this.pageCacheOffset -= this.viewSize;
         if (this.pageCacheOffset < 0) {
           this.pageCacheOffset = 0;
         }
         this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
-        this.paged = this.pageCacheOffset > 0;
-        return 'paged';
+        return this.state = this.pageCacheOffset > 0 ? SubscriptionViewState.PAGED : SubscriptionViewState.CURRENT;
     }
   };
 
@@ -2974,7 +3074,7 @@ SubscriptionView = (function(superClass) {
     this.pagePending = void 0;
     this.pageCacheOffset = 0;
     this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
-    return this.paged = false;
+    return this.updateState();
   };
 
   SubscriptionView.prototype.replaceItems = function(source) {
@@ -2987,6 +3087,41 @@ SubscriptionView = (function(superClass) {
   return SubscriptionView;
 
 })(SubscriptionCache);
+
+AlarmSubscriptionView = (function(superClass) {
+  extend(AlarmSubscriptionView, superClass);
+
+  function AlarmSubscriptionView() {
+    return AlarmSubscriptionView.__super__.constructor.apply(this, arguments);
+  }
+
+  AlarmSubscriptionView.prototype.shouldRemoveItemOnUpdate = function(item) {
+    item._updateState = 'none';
+    return item.state === 'REMOVED';
+  };
+
+  AlarmSubscriptionView.prototype.onUpdateFailure = function(ids, newState) {
+    var alarm, i, id, len, results;
+    results = [];
+    for (i = 0, len = ids.length; i < len; i++) {
+      id = ids[i];
+      alarm = this.getItemById(id);
+      if (alarm) {
+        results.push(alarm._updateState = 'none');
+      } else {
+        results.push(void 0);
+      }
+    }
+    return results;
+  };
+
+  AlarmSubscriptionView.prototype.filter = function(theFilter) {
+    return this.items.filter(theFilter);
+  };
+
+  return AlarmSubscriptionView;
+
+})(SubscriptionView);
 
 //# sourceMappingURL=SubscriptionView.js.map
 
@@ -5605,10 +5740,8 @@ angular.module("greenbus.views.template/event/alarms.html", []).run(["$templateC
     "        <!--</div>-->\n" +
     "    </div>\n" +
     "    <div class=\"row\">\n" +
-    "        <div class=\"col-md-1\">\n" +
+    "        <div class=\"col-md-4\">\n" +
     "            <gb-select-all model=\"alarms\" notify=\"selectAllChanged(state)\"></gb-select-all>\n" +
-    "        </div>\n" +
-    "        <div class=\"col-md-11\">\n" +
     "            <div class=\"btn-group gb-toolbar\" ng-show=\"selectAllState!==0\" role=\"group\"  style-=\"margin-left: 1.2em;\">\n" +
     "                <button class=\"btn btn-default\" ng-click=\"silenceSelected()\" style=\"width: 60px;\" title=\"Silence selected alarms\"><i class=\"fa fa-volume-off\" style=\"font-size: 124%;\"></i></button>\n" +
     "                <button class=\"btn btn-default\" ng-click=\"acknowledgeSelected()\" style=\"width: 60px;\" title=\"Acknowledge selected alarms\"><i class=\"fa fa-bell-slash-o\"></i></button>\n" +
@@ -5617,10 +5750,19 @@ angular.module("greenbus.views.template/event/alarms.html", []).run(["$templateC
     "            <div class=\"btn-group gb-toolbar\" ng-show=\"selectAllState!==0\" role=\"group\"  style-=\"margin-left: 1.2em;\">\n" +
     "                <button class=\"btn btn-default\" ng-click=\"removeSelected()\" style=\"width: 60px;\" title=\"Remove selected acknowledged alarms\"><i class=\"fa fa-trash-o\"></i></button>\n" +
     "            </div>\n" +
-    "            <div class=\"alert alert-{{notification.type}} gb-alert-inline\" ng-show=\"notification\" role=\"alert\" style=\"margin-left: 1em;\">\n" +
-    "                <span><i class=\"fa fa-info-circle\"></i> {{ notification.message }}</span>\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-4\">\n" +
+    "            <div class=\"alert alert-{{notification.type}} gb-alert-md\" ng-show=\"notification\" role=\"alert\"><span><i class=\"fa fa-info-circle\"></i> {{ notification.message }}</span></div>\n" +
+    "            <div class=\"alert alert-info gb-alert-md\" ng-show=\"newItems\" role=\"alert\"><span><i class=\"fa fa-info-circle\"></i> {{ newItems }}</span></div>\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-4 text-right\">\n" +
+    "            <button type=\"button\" class=\"btn btn-default\" ng-click=\"pageFirst()\" ng-show=\"pageState !== 0\" style=\"margin-right: 1em;\" popover=\"Go to current events\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span style=\"font-weight: bolder\">|</span><i class=\"fa fa-chevron-left\" style=\"vertical-align: middle\"></i></button>\n" +
+    "            <div class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
+    "                <button type=\"button\" ng-class=\"pageState | pagePreviousClass\" ng-click=\"pagePrevious()\" popover=\"Previous page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"pageState | pagingIcon: 'left'\" style=\"vertical-align: middle\"></i></button>\n" +
+    "                <button type=\"button\" ng-class=\"pageState | pageNextClass: lastPage\" ng-click=\"pageNext()\" popover=\"Next page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"pageState | pagingIcon: 'right'\" style=\"vertical-align: middle\"></i></button>\n" +
     "            </div>\n" +
     "        </div>\n" +
+    "\n" +
     "    </div>\n" +
     "\n" +
     "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
@@ -5654,6 +5796,9 @@ angular.module("greenbus.views.template/event/alarms.html", []).run(["$templateC
     "            </tr>\n" +
     "            </tbody>\n" +
     "        </table>\n" +
+    "    </div>\n" +
+    "    <div ng-show=\"pageState === 4\">\n" +
+    "        No alarms\n" +
     "    </div>\n" +
     "</div>\n" +
     "");
@@ -5714,13 +5859,13 @@ angular.module("greenbus.views.template/event/events.html", []).run(["$templateC
     "            <h3>Events</h3>\n" +
     "        </div>\n" +
     "        <div class=\"col-md-4\">\n" +
-    "            <alert type=\"info\" ng-show=\"newEvents\" role=\"alert\" style=\" margin-bottom: 0;padding-top: 6px; padding-bottom: 6px;\"><i class=\"fa fa-info-circle\"></i> {{ newEvents }}</alert>\n" +
+    "            <alert type=\"info\" ng-show=\"newItems\" role=\"alert\" style=\" margin-bottom: 0;padding-top: 6px; padding-bottom: 6px;\"><i class=\"fa fa-info-circle\"></i> {{ newItems }}</alert>\n" +
     "        </div>\n" +
     "        <div class=\"col-md-4 text-right\" style=\"padding-top: 20px\">\n" +
-    "            <button type=\"button\" class=\"btn btn-default\" ng-click=\"pageFirst()\" ng-show=\"paged\" style=\"margin-right: 1em;\" popover=\"Go to current events\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span style=\"font-weight: bolder\">|</span><i class=\"fa fa-chevron-left\" style=\"vertical-align: middle\"></i></button>\n" +
+    "            <button type=\"button\" class=\"btn btn-default\" ng-click=\"pageFirst()\" ng-show=\"pageState !== 0\" style=\"margin-right: 1em;\" popover=\"Go to current events\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span style=\"font-weight: bolder\">|</span><i class=\"fa fa-chevron-left\" style=\"vertical-align: middle\"></i></button>\n" +
     "            <div class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
-    "                <button type=\"button\" ng-class=\"paged | pagePreviousClass\" ng-click=\"pagePrevious()\" popover=\"Previous page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i class=\"fa fa-chevron-left\" style=\"vertical-align: middle\"></i></button>\n" +
-    "                <button type=\"button\" ng-class=\"lastPage | pageNextClass\" ng-click=\"pageNext()\" popover=\"Next page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i class=\"fa fa-chevron-right\" style=\"vertical-align: middle\"></i></button>\n" +
+    "                <button type=\"button\" ng-class=\"pageState | pagePreviousClass\" ng-click=\"pagePrevious()\" popover=\"Previous page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"pageState | pagingIcon: 'left'\" style=\"vertical-align: middle\"></i></button>\n" +
+    "                <button type=\"button\" ng-class=\"pageState | pageNextClass: lastPage\" ng-click=\"pageNext()\" popover=\"Next page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"pageState | pagingIcon: 'right'\" style=\"vertical-align: middle\"></i></button>\n" +
     "            </div>\n" +
     "        </div>\n" +
     "    </div>\n" +
@@ -5750,6 +5895,9 @@ angular.module("greenbus.views.template/event/events.html", []).run(["$templateC
     "                    </tbody>\n" +
     "                </table>\n" +
     "            </div>\n" +
+    "        </div>\n" +
+    "        <div ng-show=\"pageState === 4\">\n" +
+    "            No events\n" +
     "        </div>\n" +
     "    </div>\n" +
     "</div>\n" +
