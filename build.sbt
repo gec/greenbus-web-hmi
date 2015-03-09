@@ -55,6 +55,8 @@ resolvers += "totalgrid-snapshot" at "https://repo.totalgrid.org/artifactory/tot
 // for reef-client, msg-qpid
 resolvers += "totalgrid-private-snapshot" at "https://repo.totalgrid.org/artifactory/totalgrid-private-snapshot"
 
+resolvers += Resolver.mavenLocal
+
 libraryDependencies ++= Seq(
   filters,
   cache,
