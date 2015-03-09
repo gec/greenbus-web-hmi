@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-03-03
+ * Version: 0.1.0-SNAPSHOT - 2015-03-09
  * License: Apache Version 2.0
  */
 
@@ -407,6 +407,11 @@ table.gb-row-radius {
   border-right: 1px solid #ddd;
 }
 
+
+.gb-remove {
+  font-size: 200%;
+  vertical-align: middle;
+}
 
 .gb-value {
   text-align: right;
