@@ -236,12 +236,13 @@ angular.module('greenbus.views.authentication', ['ngCookies', 'ui.bootstrap', 'u
       return promise.then(null, function(originalResponse) {
         if(originalResponse.status === 401) {
 
-          var redirectLocation = $location.path(); // or $location.url() ?
+          var redirectLocation = $location.path() // or $location.url() ?
+          var absUrl = $location.absUrl()
           console.log( 'authenticationInterceptor: redirectLocation 1 =' + redirectLocation)
 
 
           // If we're already on the login page, we don't redirect on failed login.
-          if( redirectLocation.indexOf( '/login') !== 0){
+          if( absUrl.indexOf('/login') < 0 && redirectLocation.indexOf( '/login') !== 0){
 
             var authentication = $injector.get('authentication')
             authentication.redirectToLoginPage( redirectLocation)
