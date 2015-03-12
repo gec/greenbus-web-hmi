@@ -27,6 +27,11 @@ GET           /models/:modelId/points                                 controller
 GET           /models/:modelId/points/:uuid                           controllers.Application.getPoint( modelId: String, uuid: String)
 POST          /models/:modelId/points/commands                        controllers.Application.getPointsCommands( modelId: String)
 
+POST          /models/:modelId/points/:pointId/override               controllers.Application.postPointOverride( modelId: String, pointId: String)
+DELETE        /models/:modelId/points/:pointId/override               controllers.Application.deletePointOverrideOrNis( modelId: String, pointId: String)
+POST          /models/:modelId/points/:pointId/nis                    controllers.Application.postPointNis( modelId: String, pointId: String)
+DELETE        /models/:modelId/points/:pointId/nis                    controllers.Application.deletePointOverrideOrNis( modelId: String, pointId: String)
+
 POST          /models/:modelId/commandlock                            controllers.Application.postCommandLock( modelId: String)
 DELETE        /models/:modelId/commandlock/:id                        controllers.Application.deleteCommandLock( modelId: String, id: String)
 POST          /models/:modelId/commands/:id                           controllers.Application.postCommand( modelId: String, id: String)

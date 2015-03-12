@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-03-09
+ * Version: 0.1.0-SNAPSHOT - 2015-03-12
  * License: Apache Version 2.0
  */
 
@@ -41,8 +41,8 @@ td.event-agent {
 }
 
 .icon-spin {
-  -animation: icon-spin1 .7s infinite linear;
-  -webkit-animation: icon-spin2 .7s infinite linear;
+  -animation: icon-spin1 1.6s infinite linear;
+  -webkit-animation: icon-spin2 1.6s infinite linear;
 }
 
 @-webkit-keyframes icon-spin2 {
@@ -408,11 +408,6 @@ table.gb-row-radius {
 }
 
 
-.gb-remove {
-  font-size: 200%;
-  vertical-align: middle;
-}
-
 .gb-value {
   text-align: right;
   white-space: nowrap;
@@ -457,6 +452,17 @@ table.gb-row-radius {
   top: 28%;
   position: absolute;
   right: 1em;
+}
+
+
+.gb-btn-replacenis-remove {
+  font-size: 200%;
+  vertical-align: middle;
+  cursor: pointer;
+  margin-left: .2em;
+}
+.gb-btn-replacenis-remove i {
+  vertical-align: text-top;
 }
 
 .gb-alert-inline {

@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-03-09
+ * Version: 0.1.0-SNAPSHOT - 2015-03-12
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -4144,7 +4144,7 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         image = '../../images/pointRaw.png'
       } else {
         switch( type) {
-          case 'ANALOGANALOG': image = '/images/pointAnalog.png'; break;
+          case 'ANALOG': image = '/images/pointAnalog.png'; break;
           case 'STATUS': image = '/images/pointStatus.png'; break;
           default: image = '/images/pointRaw.png';
         }
@@ -4222,7 +4222,7 @@ angular.module('greenbus.views.measurementValue', []).
         },
         function( ex, statusCode, headers, config){
           console.log( 'gbMeasurementValueRest ERROR overriding point with ID: ' + pointId + ' to value "' + value + '" with type: "' + valueType + '". Exception: ' + ex.exception + ' - ' + ex.message)
-          failure.call( callee, pointId, value, valueType, ex, statusCode)
+          failure.call( callee, pointId, ex, statusCode)
         }
       )
 
@@ -4244,7 +4244,7 @@ angular.module('greenbus.views.measurementValue', []).
           success.call( callee, data)
         },
         function( ex, statusCode, headers, config){
-          console.log( 'gbMeasurementValueRest ERROR NIS point with ID: ' + pointId + '. Exception: ' + ex.exception + ' - ' + ex.message)
+          console.log( 'gbMeasurementValueRest ERROR setting NIS point with ID: ' + pointId + '. Exception: ' + ex.exception + ' - ' + ex.message)
           failure.call( callee, pointId, ex, statusCode)
         }
       )
@@ -4259,15 +4259,14 @@ angular.module('greenbus.views.measurementValue', []).
      */
     function remove( pointId, callee, success, failure, nisOrOverride) {
 
-      var arg,
-          url = '/models/1/points/' + pointId + '/' + nisOrOverride
+      var url = '/models/1/points/' + pointId + '/' + nisOrOverride
 
-      rest.delete( url, arg, null, null,
+      rest.delete( url, null, null,
         function( data) {
           success.call( callee, data)
         },
         function( ex, statusCode, headers, config){
-          console.log( 'gbMeasurementValueRest ERROR NIS point with ID: ' + pointId + '. Exception: ' + ex.exception + ' - ' + ex.message)
+          console.log( 'gbMeasurementValueRest ERROR removing ' + nisOrOverride + ' on point with ID: ' + pointId + '. Exception: ' + ex.exception + ' - ' + ex.message)
           failure.call( callee, pointId, ex, statusCode)
         }
       )
@@ -4290,39 +4289,89 @@ angular.module('greenbus.views.measurementValue', []).
     }
   }]).
 
-  controller( 'gbMeasurementValueController', ['$scope', 'gbMeasurementValueRest', function( $scope, gbMeasurementValueRest) {
+  controller( 'gbMeasurementValueController', ['$scope', 'gbMeasurementValueRest', '$timeout', function( $scope, gbMeasurementValueRest, $timeout) {
     var self = this
-    $scope.editMode = undefined // {value: '', valueType: ''}
-    $scope.canRemove = false
-    $scope.canNis = false
+    
+    // When editing === undefined, we are not editing the value. The value is a view only span.
+    // When editing === {value: '', valueType: ''}, we are editing.
+    //
+    $scope.editing = undefined
+    
     $scope.removeTooltip = undefined // Remove NIS, Remove Replace
     $scope.placeHolder = ''
     $scope.requestPending = undefined
-    $scope.requestError = undefined
+    $scope.replyError = undefined
 
+    function getValueTypeFromPointType() {
+      if( ! $scope.model.pointType)
+        return 'DOUBLE'
 
-    self.configureInput = function() {
-      var m = $scope.model.currentMeasurement
-      switch( m.shortQuality) {
-        case 'R':
-          $scope.canRemove = true
-          $scope.canNis = true
-          $scope.removeTooltip = 'Remove replace'
-          break
-        case 'N':
-          $scope.canRemove = true
-          $scope.canNis = false
-          $scope.removeTooltip = 'Remove NIS'
-          break
+      switch( $scope.model.pointType) {
+        case 'ANALOG': return 'DOUBLE'
+        case 'STATUS': return 'BOOL'
+        case 'COUNTER': return 'INT'
         default:
-          $scope.canRemove = false
-          $scope.canNis = true
-          $scope.removeTooltip = undefined
-          break
+          return 'DOUBLE'
       }
-
-      // set focus and select text
     }
+    function getValueType() {
+      if( ! $scope.model.currentMeasurement)
+        return getValueTypeFromPointType()
+
+      var m = $scope.model.currentMeasurement
+      if( ! m.type)
+        return getValueTypeFromPointType()
+
+      switch( m.type) {
+        case 'DOUBLE': return m.type
+        case 'INT': return m.type
+        case 'STRING': return m.type
+        case 'BOOL': return m.type
+        default:
+          return getValueTypeFromPointType()
+      }
+    }
+    
+    $scope.editStart = function() {
+      if( $scope.editing)
+        return
+
+      $scope.editing = {
+        value: $scope.model.currentMeasurement.value,
+        valueType: getValueType()
+      }
+      $scope.removeTooltip = self.getRemoveTooltip()
+    }
+    
+    function editEnd() {
+      $scope.editing = undefined
+      pendingEditEndCancel() // just in case
+    }
+
+
+
+    //self.configureInput = function() {
+    //  var m = $scope.model.currentMeasurement
+    //  switch( m.shortQuality) {
+    //    case 'R':
+    //      $scope.canRemove = true
+    //      $scope.canNis = true
+    //      $scope.removeTooltip = 'Remove replace'
+    //      break
+    //    case 'N':
+    //      $scope.canRemove = true
+    //      $scope.canNis = false
+    //      $scope.removeTooltip = 'Remove NIS'
+    //      break
+    //    default:
+    //      $scope.canRemove = false
+    //      $scope.canNis = true
+    //      $scope.removeTooltip = undefined
+    //      break
+    //  }
+    //
+    //  // set focus and select text
+    //}
 
     self.getRemoveTooltip = function() {
       var m = $scope.model.currentMeasurement
@@ -4333,64 +4382,85 @@ angular.module('greenbus.views.measurementValue', []).
       }
     }
 
-    function requesting( requestType ) {
-      $scope.requestError = undefined
+    function beforeRequest( requestType ) {
+      $scope.replyError = undefined
       $scope.requestPending = requestType
     }
+    function afterRequestSuccessful( requestType ) {
+      $scope.replyError = undefined
+      $scope.requestPending = undefined
+      editEnd()
+    }
+    function afterRequestFailure( pointId, ex, statusCode ) {
+      $scope.replyError = '"Exception: ' + ex.exception + ' - ' + ex.message
+      $scope.requestPending = undefined
+    }
+
+    // If user clicks one of our buttons (NIS, Override, or Remove), then the input gets a blur event.
+    // We don't want to end the edit mode in this case. We set a timeout to see if someone
+    // did, in fact, click a button (or tab and a button got focus). If not, then we go ahead with
+    // ending edit mode.
+    //
+    function pendingEditEndStart() {
+      if( ! $scope.editing)
+        return
+      $scope.pendingEditEndTimer = $timeout( function() {
+        $scope.editing = undefined
+        $scope.pendingEditEndTimer = undefined
+      }, 300)
+    }
+    function pendingEditEndCancel() {
+      if( $scope.pendingEditEndTimer) {
+        $timeout.cancel( $scope.pendingEditEndTimer)
+        $scope.pendingEditEndTimer = undefined
+      }
+    }
+
     $scope.nis = function() {
+      pendingEditEndCancel()
+      if( $scope.requestPending)
+        return false
+
       var m = $scope.model.currentMeasurement
       if( m.shortQuality !== 'R' && m.shortQuality !== 'N') {
-        requesting( 'nis')
-        gbMeasurementValueRest.nis(
-          $scope.model.id,
-          this,
-          function( ) {
-
-          },
-          function( ) {
-
-          }
-        )
+        beforeRequest( 'nis')
+        gbMeasurementValueRest.nis($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
       }
     }
-    $scope.replace = function() {
+    $scope.override = function() {
+      pendingEditEndCancel()
+      if( $scope.requestPending)
+        return false
+
       var m = $scope.model.currentMeasurement
-      requesting( 'nis')
-      gbMeasurementValueRest.override(
-        $scope.model.id,
-        $scope.editMode.value,
-        $scope.editMode.valueType,
-        this,
-        function( ) {
-
-        },
-        function( ) {
-
-        }
-      )
+      beforeRequest( 'override')
+      gbMeasurementValueRest.override($scope.model.id, $scope.editing.value, $scope.editing.valueType, this, afterRequestSuccessful, afterRequestFailure)
     }
     $scope.remove = function() {
+      pendingEditEndCancel()
+      if( $scope.requestPending)
+        return false
+
       var m = $scope.model.currentMeasurement
-      if( m.shortQuality === 'R' || m.shortQuality === 'N') {
-
-      }
-
+      beforeRequest( 'remove')
+      gbMeasurementValueRest.remove($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
     }
-    $scope.onBlur = function() {
-
+    $scope.inputKeyDown = function($event) {
+      if( $event.keyCode === 27) // escape key
+        editEnd()
     }
-    $scope.onFocus = function() {
-
+    $scope.inputOnFocus = function() {
+      pendingEditEndCancel()
+    }
+    $scope.buttonOnFocus = function() {
+      pendingEditEndCancel()
     }
 
-    $scope.edit = function() {
-      if( $scope.editMode)
-        return
-
-      $scope.editMode = {
-        value: $scope.model.currentMeasurement.value
-      }
-      $scope.removeTooltip = self.getRemoveTooltip()
+    $scope.inputOnBlur = function() {
+      pendingEditEndStart()
+    }
+    $scope.buttonOnBlur = function() {
+      pendingEditEndStart()
     }
 
   }]).
@@ -4409,12 +4479,16 @@ angular.module('greenbus.views.measurementValue', []).
       link: function(scope, element, attrs, controller) {
         var focusedElement
         element.on('click', function () {
-          if ( ! scope.editMode) {
-            scope.edit()
+          console.log( 'gbMeasurementValue onClick')
+          if ( ! scope.editing) {
+            scope.editStart()
             scope.$digest()
-
-            this.select();
-            focusedElement = this;
+            console.log( 'gbMeasurementValue onClick selecting input')
+            var input = element.find( 'input')
+            if( input && input.length > 0) {
+              input[0].select()
+              focusedElement = input[0];
+            }
           }
         })
         element.on('blur', function () {
@@ -4431,18 +4505,9 @@ angular.module('greenbus.views.measurementValue', []).
     }
   }).
 
-  filter('measurementValueRemoveClass', function() {
-    return function(state, updateState) {
-      var s
-      switch( state) {
-        case 'ACKNOWLEDGED': s = 'fa fa-trash gb-alarm-remove'; break;
-        case 'REMOVED': s = 'fa fa-trash-o  gb-alarm-ack'; break;
-        default: s = 'fa'; break;
-      }
-
-      if( updateState === 'removing')
-        s += ' fa-spin'
-      return s
+  filter('buttonDisabled', function() {
+    return function(disabled, classes) {
+      return disabled ? classes + ' disabled' : classes
     };
   })
 
@@ -6229,7 +6294,7 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
     "                        </td>\n" +
     "                        <td  ng-if=\"!point.rowDetail\" class=\"gb-value\" ng-click=\"togglePointRowById(point.id)\">\n" +
     "                            <span class=\"glyphicon glyphicon-edit pull-left text-muted\" style=\"padding-right: 10px; opacity: {{ point.commandSet ? 1 : 0 }}\" title=\"Control or Setpoint\"></span>\n" +
-    "                            {{point.currentMeasurement.value}}\n" +
+    "                            <gb-measurement-value model=\"point\"></gb-measurement-value>\n" +
     "                        </td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.unit}}</td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\" style=\"padding-bottom: 0\"><span ng-class=\"point.currentMeasurement.validity | validityIcon\" title=\"{{point.currentMeasurement.longQuality}}\"></span></td>\n" +
@@ -6334,24 +6399,25 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
 angular.module("greenbus.views.template/measurementValue/measurementValue.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("greenbus.views.template/measurementValue/measurementValue.html",
     "<span>\n" +
-    "    <span ng-if=\"!editMode\" ng-click=\"edit()\">{{ model.currentMeasurement.value }}</span>\n" +
+    "    <i class=\"fa fa-exclamation-triangle\" ng-show=\"replyError\" popover=\"{{replyError}}\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"></i>\n" +
+    "    <span ng-if=\"!editing\">{{ model.currentMeasurement.value }}</span>\n" +
     "\n" +
-    "    <div ng-if=\"editMode\">\n" +
-    "        <input type=\"text\" class=\"form-control\" ng-model=\"editMode.value\" ng-onblur=\"onBlur()\" ng-focus=\"onFocus()\" name=\"measurement_value\" ng-pattern=\"\" style=\"width:6em;\" placeholder=\"{{ placeHolder}}\">\n" +
+    "    <div ng-if=\"editing\" class=\"form-inline\">\n" +
+    "        <input type=\"text\" class=\"form-control\" ng-model=\"editing.value\" ng-blur=\"inputOnBlur()\" ng-focus=\"inputOnFocus()\" ng-keydown=\"inputKeyDown($event)\" name=\"measurement_value\" ng-pattern=\"\" style=\"width:6em;\" placeholder=\"{{ placeHolder}}\">\n" +
     "        <div ng-if=\"model.currentMeasurement.shortQuality==='R'\" class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
-    "            <button ng-click=\"replace()\" type=\"button\" class=\"btn btn-info\" popover=\"Replace\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">R</button>\n" +
-    "            <button ng-click=\"nis()\"     type=\"button\" class=\"btn btn-info\" popover=\"Not In Service\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">N</button>\n" +
+    "            <button ng-click=\"override()\" type=\"button\" ng-class=\"requestPending | buttonDisabled: 'btn btn-info gb-btn-override'\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover=\"Replace\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span ng-class=\"(requestPending==='override')?'icon-spin':''\">R</span></button>\n" +
+    "            <button ng-click=\"nis()\"     type=\"button\" ng-class=\"requestPending | buttonDisabled: 'btn btn-info gb-btn-nis'\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover=\"Not In Service\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span ng-class=\"(requestPending==='nis')?'icon-spin':''\">N</span></button>\n" +
+    "            <a ng-click=\"remove()\"  type=\"button\" class=\"text-danger gb-btn-replacenis-remove\" popover=\"{{removeTooltip}}\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"(requestPending==='remove')?'fa-spin fa fa-minus-circle':'fa fa-minus-circle'\"></i></a>\n" +
     "        </div>\n" +
     "        <div ng-if=\"model.currentMeasurement.shortQuality==='N'\" class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
-    "            <button ng-click=\"replace()\" type=\"button\" class=\"btn btn-info\" popover=\"Replace\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">R</button>\n" +
-    "            <button ng-click=\"nis()\"     type=\"button\" class=\"btn btn-info disabled\" popover=\"Not In Service\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">N</button>\n" +
-    "            <button ng-click=\"remove()\"  type=\"button\" class=\"btn btn-danger\" popover=\"{{removeTooltip}}\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i class=\"fa fa-minus\"></i></button>\n" +
+    "            <button ng-click=\"override()\" type=\"button\" ng-class=\"requestPending | buttonDisabled: 'btn btn-info gb-btn-override'\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover=\"Replace\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span ng-class=\"(requestPending==='override')?'icon-spin':''\">R</span></button>\n" +
+    "            <button ng-click=\"nis()\"     type=\"button\" class=\"btn btn-info disabled gb-btn-nis\" popover=\"Not In Service\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">N</button>\n" +
+    "            <a ng-click=\"remove()\"  type=\"button\" class=\"text-danger gb-btn-replacenis-remove\" popover=\"{{removeTooltip}}\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"(requestPending==='remove')?'fa-spin fa fa-minus-circle':'fa fa-minus-circle'\"></i></a>\n" +
     "        </div>\n" +
     "        <div ng-if=\"model.currentMeasurement.shortQuality!=='N' && model.currentMeasurement.shortQuality!=='R'\" class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
-    "            <button ng-click=\"replace()\" type=\"button\" class=\"btn btn-info\" popover=\"Replace\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">R</button>\n" +
-    "            <button ng-click=\"nis()\"     type=\"button\" class=\"btn btn-info\" popover=\"Not In Service\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\">N</button>\n" +
+    "            <button ng-click=\"override()\" type=\"button\" ng-class=\"requestPending | buttonDisabled: 'btn btn-info gb-btn-override'\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover=\"Replace\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span ng-class=\"(requestPending==='override')?'icon-spin':''\">R</span></button>\n" +
+    "            <button ng-click=\"nis()\"     type=\"button\" ng-class=\"requestPending | buttonDisabled: 'btn btn-info gb-btn-nis'\" ng-focus=\"buttonOnFocus()\" ng-blur=\"buttonOnBlur()\" popover=\"Not In Service\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span ng-class=\"(requestPending==='nis')?'icon-spin':''\">N</span></button>\n" +
     "        </div>\n" +
-    "        <a ng-if=\"model.currentMeasurement.shortQuality==='N' || model.currentMeasurement.shortQuality==='R'\" ng-click=\"remove()\"  type=\"button\" class=\"text-danger gb-remove\" popover=\"{{removeTooltip}}\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i class=\"fa fa-minus-circle\"></i></a>\n" +
     "    </div>\n" +
     "</span>\n" +
     "");
