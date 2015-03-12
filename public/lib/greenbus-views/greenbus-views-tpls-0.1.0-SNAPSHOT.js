@@ -4444,7 +4444,12 @@ angular.module('greenbus.views.measurementValue', []).
 
       var m = $scope.model.currentMeasurement
       beforeRequest( 'remove')
-      gbMeasurementValueRest.remove($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
+      if( m.shortQuality==='R')
+        gbMeasurementValueRest.removeOverride($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
+      else if( m.shortQuality==='N')
+        gbMeasurementValueRest.removeNis($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
+      else
+        console.error( 'gbMeasurementValueController.remove measurement shortQuality must be R or N; but it is: "' + m.shortQuality + '"')
     }
     $scope.inputKeyDown = function($event) {
       if( $event.keyCode === 27) // escape key
