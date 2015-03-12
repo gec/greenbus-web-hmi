@@ -3970,8 +3970,8 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
             currentMeasurement = {
               value: '-',
               time: null,
-              shortQuality: '-',
-              longQuality: '-',
+              shortQuality: '',
+              longQuality: '',
               validity: 'NOTLOADED',
               expandRow: false,
               commandSet: undefined
@@ -6297,7 +6297,7 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
     "                            <gb-measurement-value model=\"point\"></gb-measurement-value>\n" +
     "                        </td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.unit}}</td>\n" +
-    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\" style=\"padding-bottom: 0\"><span ng-class=\"point.currentMeasurement.validity | validityIcon\" title=\"{{point.currentMeasurement.longQuality}}\"></span></td>\n" +
+    "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\" style=\"padding-bottom: 0\"><span ng-class=\"point.currentMeasurement.validity | validityIcon\" title=\"{{point.currentMeasurement.longQuality}}\"></span> <strong>{{point.currentMeasurement.shortQuality}}</strong></td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.currentMeasurement.time | date:'h:mm:ss a, MM-dd-yyyy'}}</td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{ point.pointType }}</td>\n" +
     "\n" +
