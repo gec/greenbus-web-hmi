@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-03-12
+ * Version: 0.1.0-SNAPSHOT - 2015-03-13
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -2965,7 +2965,7 @@ SubscriptionView = (function(superClass) {
       switch (false) {
         case this.items.length !== 0:
           return SubscriptionViewState.NO_ITEMS;
-        case !(this.pageCacheOffset > 0):
+        case this.pageCacheOffset === 0:
           return SubscriptionViewState.PAGED;
         default:
           return SubscriptionViewState.CURRENT;
@@ -4444,12 +4444,14 @@ angular.module('greenbus.views.measurementValue', []).
 
       var m = $scope.model.currentMeasurement
       beforeRequest( 'remove')
-      if( m.shortQuality==='R')
+      if( m.shortQuality === 'R')
         gbMeasurementValueRest.removeOverride($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
-      else if( m.shortQuality==='N')
+      else if( m.shortQuality === 'N')
         gbMeasurementValueRest.removeNis($scope.model.id, this, afterRequestSuccessful, afterRequestFailure)
-      else
+      else {
+        $scope.requestPending = undefined
         console.error( 'gbMeasurementValueController.remove measurement shortQuality must be R or N; but it is: "' + m.shortQuality + '"')
+      }
     }
     $scope.inputKeyDown = function($event) {
       if( $event.keyCode === 27) // escape key
