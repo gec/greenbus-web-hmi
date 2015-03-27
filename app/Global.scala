@@ -18,6 +18,7 @@
  */
 // No package. Just the root context. It's what play wants.
 
+import io.greenbus.web.config.dal.InitialDB
 import org.totalgrid.msg.Session
 import io.greenbus.web.connection.{ReefServiceFactoryDefault, ConnectionStatus, WebSocketPushActorFactory, ReefConnectionManager}
 import io.greenbus.web.websocket.{WebSocketPushActor, WebSocketConsumerImpl}
@@ -29,6 +30,7 @@ import play.api.libs.iteratee.Concurrent
 import play.api.libs.json.JsValue
 import play.api.Play.current
 import akka.actor.{Props, ActorContext}
+import play.api.db.slick
 
 
 object ClientPushActorFactory extends WebSocketPushActorFactory{
@@ -68,6 +70,9 @@ object Global extends GlobalSettings {
       case _ => Logger.info( "Starting reef connection manager " + reefConnectionManager)
     }
     */
+
+
+    InitialDB.init()
 
   }
 }

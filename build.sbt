@@ -71,7 +71,9 @@ libraryDependencies ++= Seq(
   "org.webjars" % "momentjs" % "2.8.3",
   "org.totalgrid.reef" % "reef-client" % "0.6.0.M4-SNAPSHOT" withSources(),
   "org.totalgrid.msg" % "msg-qpid" % "0.0.1-SNAPSHOT",
-  "io.greenbus.web" %% "web-core" % "0.3.0-SNAPSHOT" withSources()
+  "io.greenbus.web" %% "web-core" % "0.3.0-SNAPSHOT" withSources(),
+  "com.typesafe.slick" %% "slick" % "2.1.0",
+  "com.typesafe.play" %% "play-slick" % "0.8.1"
 )
 
 // Scala Compiler Options
