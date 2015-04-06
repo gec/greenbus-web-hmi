@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-03-27
+ * Version: 0.1.0-SNAPSHOT - 2015-04-06
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -365,7 +365,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       var REQUEST_ADD_CHART = 'gb-chart.addChart',
           historyConstraints ={
             time: 1000 * 60 * 60 * 2, // 2 hours
-            size: 60 * 60 * 2, // 2 hours of 1 second data
+            size: 60 * 60 * 2 * 10, // 2 hours of 10 measurements per second data
             throttling: 5000
           }
 
@@ -486,7 +486,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
         firstPointLoaded = false,
         historyConstraints ={
           time: 1000 * 60 * 60 * 4, // 4 hours
-          size: 60 * 60 * 4, // 4 hours of 1 second data
+          size: 60 * 60 * 4 * 10, // 4 hours of 10 measurements per second data
           throttling: 5000
         }
 
@@ -1394,6 +1394,22 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
 angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.views.navigation', 'greenbus.views.rest']).
   
   controller( 'gbEssesController', ['$scope', '$filter', 'rest', 'measurement', '$location', function( $scope, $filter, rest, measurement, $location) {
+    var PT = {
+          Point: 'Point',
+          Power: 'OutputPower',
+          EnergyCapacity: 'EnergyCapacity',
+          PowerCapacity: 'PowerCapacity',
+          PercentSoc: '%SOC',
+          Standby: 'Standby'
+        },
+        TypeToVarMap = {
+          OutputPower: 'power',
+          EnergyCapacity: 'energyCapacity',
+          PowerCapacity: 'powerCapacity',
+          '%SOC': 'percentSoc',
+          Standby: 'standby'
+        }
+
     $scope.ceses = []     // our mappings of data from the server
     $scope.equipment = [] // from the server. TODO this should not be scope, but get assigns to scope.
     $scope.searchText = ''
@@ -1446,14 +1462,14 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       var value = pointMeasurement.value
 
       switch (info.type) {
-        case '%SOC':
+        case PT.PercentSoc:
           value = formatNumberNoDecimal( value);
           break;
-        case 'CapacityEnergy':
-        case 'CapacityPower':
+        case PT.EnergyCapacity:
+        case PT.PowerCapacity:
           value = formatNumberValue( value) + ' ' + info.unit;
           break;
-        case 'Charging':
+        case PT.Power:
           value = formatNumberValue( value) + ' ' + info.unit;
           break;
         default:
@@ -1463,43 +1479,48 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
     // Return standby, charging, or discharging
     function getState( ess) {
-      if( ess.Standby === 'OffAvailable' || ess.Standby === 'true')
-        return 'standby'
-      else if( typeof ess.Charging == 'boolean')
-        return ess.Charging ? 'charging' : 'discharging';
-      else if( typeof ess.Charging.indexOf === 'function' && ess.Charging.indexOf('-') >= 0) // has minus sign, so it's charging
-        return 'charging'
-      else
-        return 'discharging'
+      if( ess.standby === 'OffAvailable' || ess.standby === 'true')
+        return 'standby';
+      else if( typeof ess.power == 'boolean')
+        return ess.power ? 'charging' : 'discharging';
+      else if( typeof ess.power.indexOf === 'function') {
+        // It's a string value + space + unit.
+        if( ess.power.indexOf('-') === 0) // has minus sign, so it's charging
+          return 'charging';
+        else if( ess.power.indexOf('0 ') === 0)
+          return 'standby';
+        else
+          return 'discharging'
+      }
 
+      return ''
     }
 
     //function makeCes( eq, capacityUnit) {
     function makeCes( eq) {
       return {
         name: eq.name,
-        CapacityEnergy: '',
-        CapacityPower: '',
-        Standby: '',
-        Charging: '',
-        '%SOC': '',
+        energyCapacity: '',
+        powerCapacity: '',
+        standby: '',
+        power: '',
+        percentSoc: '',
         percentSocMax100: 0, // Used by batter symbol
         standbyOrOnline: '', // 'Standby', 'Online'
         state: 's'    // 'standby', 'charging', 'discharging'
       }
     }
 
-    var POINT_TYPES =  ['%SOC', 'Charging', 'Standby', 'CapacityEnergy', 'CapacityPower']
+    var POINT_TYPES =  [PT.PercentSoc, PT.Power, PT.Standby, PT.EnergyCapacity, PT.PowerCapacity]
     function getInterestingType( types) {
       for( var index = types.length-1; index >= 0; index--) {
         var typ = types[index]
         switch( typ) {
-          case '%SOC':
-          case 'Charging':
-          case 'Standby':
-//                case 'Capacity':
-          case 'CapacityPower': // kW
-          case 'CapacityEnergy': // kWh
+          case PT.PercentSoc:
+          case PT.Power:
+          case PT.Standby:
+          case PT.PowerCapacity: // kW
+          case PT.EnergyCapacity: // kWh
             return typ
           default:
         }
@@ -1521,15 +1542,15 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
         console.log( 'gbEssController.onMeasurement ' + pm.point.id + ' "' + pm.measurement.value + '"')
         // Map the point.name to the standard types (i.e. capacity, standby, charging)
         var value = processValue( info, pm.measurement)
-        if( info.type == 'Standby') {
+        if( info.type == PT.Standby) {
           if( value === 'OffAvailable' || value === 'true')
             $scope.ceses[ info.cesIndex].standbyOrOnline = 'Standby'
           else
             $scope.ceses[ info.cesIndex].standbyOrOnline = 'Online'
-        } else if( info.type == '%SOC') {
+        } else if( info.type == PT.PercentSoc) {
           $scope.ceses[ info.cesIndex].percentSocMax100 = Math.min( value, 100)
         }
-        $scope.ceses[ info.cesIndex][info.type] = value
+        $scope.ceses[ info.cesIndex][ TypeToVarMap[info.type]] = value
         $scope.ceses[ info.cesIndex].state = getState( $scope.ceses[ info.cesIndex])
 
       } else {
@@ -1563,24 +1584,24 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       equipmentIdsQueryString = rest.queryParameterFromArrayOrString( 'equipmentIds', equipmentIds)
 
 
-      pointsUrl = '/models/1/points?' + equipmentIdsQueryString // TODO: include when fixed! + '&' + pointTypesQueryString
+      pointsUrl = '/models/1/points?' + equipmentIdsQueryString + '&' + pointTypesQueryString
       rest.get( pointsUrl, 'points', $scope, function( data) {
         var sampleData = {
           'e57170fd-2a13-4420-97ab-d1c0921cf60d': [
             {
               'name': 'MG1.CES1.ModeStndby',
               'id': 'fa9bd9a1-5ad1-4c20-b019-261cb69d0a39',
-              'types': ['Point', 'Standby']
+              'types': [PT.Point, PT.Standby]
             },
             {
               'name': 'MG1.CES1.CapacitykWh',
               'id': '585b3e36-1826-4d7b-b538-d2bb71451d76',
-              'types': ['CapacityEnergy', 'Point']
+              'types': [PT.EnergyCapacity, PT.Point]
             },
             {
               'name': 'MG1.CES1.ChgDischgRate',
               'id': 'ec7d6f06-e627-44d2-9bb9-530541fdcdfd',
-              'types': ['Charging', 'Point']
+              'types': [PT.Power, PT.Point]
             }
           ]}
 
@@ -5790,9 +5811,9 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
     }
 
     function saveSubscriptionOnScope( $scope, subscriptionId) {
-      if( ! $scope.subscriptionIds)
-        $scope.subscriptionIds = []
-      $scope.subscriptionIds.push( subscriptionId)
+      if( ! $scope.__subscriptionIds)
+        $scope.__subscriptionIds = []
+      $scope.__subscriptionIds.push( subscriptionId)
     }
 
     function registerSubscriptionOnScope( $scope, subscriptionId) {
@@ -5802,13 +5823,13 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
       // Register for controller.$destroy event and kill any retry tasks.
       // TODO save return value as unregister function. Could have multiples on one $scope.
       $scope.$on( '$destroy', function( event) {
-        if( $scope.subscriptionIds) {
-          console.log( 'subscription $destroy ' + $scope.subscriptionIds.length);
-          $scope.subscriptionIds.forEach( function( subscriptionId) {
+        if( $scope.__subscriptionIds) {
+          console.log( 'subscription $destroy ' + $scope.__subscriptionIds.length);
+          $scope.__subscriptionIds.forEach( function( subscriptionId) {
             unsubscribe( subscriptionId)
             delete subscription.listeners[ subscriptionId]
           })
-          $scope.subscriptionIds = []
+          $scope.__subscriptionIds = []
         }
       });
 
@@ -6073,25 +6094,25 @@ angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCach
     "                <th><a href=\"\" ng-click=\"sortColumn = 'state'; reverse=!reverse\">State</a></th>\n" +
     "                <th title=\"State of Charge %\" style=\"text-align: center\">SOC %</th>\n" +
     "                <th></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'CapacityPower'; reverse=!reverse\">Power</a></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'CapacityEnergy'; reverse=!reverse\">Energy</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'powerCapacity'; reverse=!reverse\">Power</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'energyCapacity'; reverse=!reverse\">Energy</a></th>\n" +
     "            </tr>\n" +
     "            </thead>\n" +
     "            <tbody>\n" +
     "            <tr ng-repeat=\"ces in ceses | filter:searchText | orderBy:sortColumn:reverse\">\n" +
     "                <td>{{ces.name}}</td>\n" +
-    "                <td>{{ces.Charging}}</td>\n" +
+    "                <td>{{ces.power}}</td>\n" +
     "                <td><img class=\"ces-state-icon\" ng-src=\"{{ces.state | essStateIcon}}\" title=\"{{ces.state | essStateDescription}}\" style=\"margin-top:2px\"/></td>\n" +
     "                <td style=\"width: 60px\">\n" +
     "                    <div class=\"battery-wrapper\" title=\"{{ces.state | essStateDescription}}\" >\n" +
-    "                        <div class=\"{{ces['%SOC'] | essBatterySocChargedClass: ces.state}}\" style=\"width:{{ces.percentSocMax100}}%\"></div>\n" +
-    "                        <div class=\"{{ces['%SOC'] | essBatterySocUnchargedClass: ces.state}}\" style=\"width:{{100-ces.percentSocMax100}}%\"></div>\n" +
+    "                        <div class=\"{{ces.percentSoc | essBatterySocChargedClass: ces.state}}\" style=\"width:{{ces.percentSocMax100}}%\"></div>\n" +
+    "                        <div class=\"{{ces.percentSoc | essBatterySocUnchargedClass: ces.state}}\" style=\"width:{{100-ces.percentSocMax100}}%\"></div>\n" +
     "                        <div class=\"battery-overlay\"></div>\n" +
     "                    </div>\n" +
     "                </td>\n" +
-    "                <td>{{ces['%SOC']}}%</td>\n" +
-    "                <td class=\"gb-cell-highlight gb-cell-highlight-left\">{{ces.CapacityPower}}</td>\n" +
-    "                <td class=\"gb-cell-highlight gb-cell-highlight-right\">{{ces.CapacityEnergy}}</td>\n" +
+    "                <td>{{ces.percentSoc}}%</td>\n" +
+    "                <td class=\"gb-cell-highlight gb-cell-highlight-left\">{{ces.powerCapacity}}</td>\n" +
+    "                <td class=\"gb-cell-highlight gb-cell-highlight-right\">{{ces.energyCapacity}}</td>\n" +
     "            </tr>\n" +
     "            </tbody>\n" +
     "        </table>\n" +
