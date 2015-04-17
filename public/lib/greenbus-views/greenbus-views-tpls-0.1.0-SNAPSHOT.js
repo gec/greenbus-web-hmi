@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-04-06
+ * Version: 0.1.0-SNAPSHOT - 2015-04-08
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -5299,7 +5299,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       return status
     }
 
-    function get(url, name, $scope, successListener) {
+    function get(url, name, $scope, successListener, failureListener) {
       if( $scope)
         $scope.loading = true;
       //console.log( 'rest.get ' + url + ' retries:' + retries.get);
@@ -5332,7 +5332,7 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
         if( $scope)
           $scope.task = $timeout(function() {
-            self.get(url, name, $scope, successListener);
+            self.get(url, name, $scope, successListener, failureListener);
           }, delay);
 
         return;
@@ -5364,7 +5364,20 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
             });
           }
         }).
-        error(httpRequestError);
+        error(function(json, statusCode, headers, config) {
+          //   0 Server down
+          // 400 Bad Request - request is malformed or missing required fields.
+          // 401 Unauthorized
+          // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
+          // 404 Not Found - Server has not found anything matching the Request-URI
+          // 408 Request Timeout
+          // 500 Internal Server Error
+          //
+          if( failureListener )
+            failureListener(json, statusCode, headers, config)
+          if( statusCode === 401 || statusCode === 0 )
+            httpRequestError(json, statusCode, headers, config)
+        });
     }
 
     function post(url, data, name, $scope, successListener, failureListener) {
