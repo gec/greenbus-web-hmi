@@ -21,6 +21,7 @@
 package controllers
 
 import akka.actor.ActorRef
+import io.greenbus.web.websocket.WebSocketActor.WebSocketServiceProvider
 import io.greenbus.web.websocket.WebSocketServices
 import play.api._
 import play.api.mvc._
@@ -36,6 +37,8 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
   def connectionManager: ActorRef = reefConnectionManager
   var reefServiceFactory: ReefServiceFactory = _
   def serviceFactory: ReefServiceFactory = reefServiceFactory
+  var myWebSocketServiceProviders: Seq[WebSocketServiceProvider] = _
+  override def webSocketServiceProviders: Seq[WebSocketServiceProvider] = myWebSocketServiceProviders
 
 
   def index = Action {

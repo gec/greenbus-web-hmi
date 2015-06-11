@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-04-08
+ * Version: 0.1.0-SNAPSHOT - 2015-06-11
  * License: Apache Version 2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/selection/selectAll.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -1319,7 +1319,7 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
         endpoint.commStatus = getCommStatus( endpoint.commStatus)
       })
       subscription.subscribe(
-        {subscribeToEndpoints: {'endpointIds': endpointIds}},
+        { name: 'SubscribeToEndpoints', 'endpointIds': endpointIds},
         $scope,
         function( subscriptionId, messageType, endpointNotification){
           switch( messageType) {
@@ -1391,9 +1391,159 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
  * Author: Flint O'Brien
  */
 
+
+/**
+ * A piece of equipment may have multiple tabs including: Measurements, Properties (aka. key/value), Schematic, etc.
+ */
+angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']).
+
+  factory('equipment', [ '$stateParams', '$q', 'rest', function( $stateParams, $q, rest) {
+
+    var pointsCache = {
+      url: undefined,
+      data: undefined
+    }
+
+    function getEquipmentIdsQueryParams( navigationElement) {
+      if( ! navigationElement)
+        return ''
+
+      var equipmentIds, equipmentIdsQueryParams
+
+      if( navigationElement.equipmentChildren.length > 0 ) {
+        equipmentIds = navigationElement.equipmentChildren.map( function( child) { return child.id })
+        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
+      } else {
+        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', navigationElement.id)
+      }
+      return equipmentIdsQueryParams
+    }
+
+    /**
+     *
+     * @param collapsePointsToArray If true, poinrs will always be returned as a list.
+     * @returns {Promise}
+     */
+    function getCurrentPoints( collapsePointsToArray) {
+      var navigationElement = $stateParams.navigationElement
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return $q.when( [])
+
+      var equipmentIdsQueryParams = getEquipmentIdsQueryParams( navigationElement),
+          depth = rest.queryParameterFromArrayOrString('depth', '9999')
+
+
+      var delimeter = '?'
+      var url = '/models/1/points'
+
+      if( equipmentIdsQueryParams.length > 0 ) {
+        url += delimeter + equipmentIdsQueryParams
+        delimeter = '&'
+      }
+      if( depth.length > 0 )
+        url += delimeter + depth
+
+      return rest.get(url).then(
+        function( response) {
+          var points = [],
+              data = response.data
+
+          // data is either a array of points or a map of equipmentId -> points[]
+          // If it's an object, convert it to a list of points.
+          if( collapsePointsToArray && angular.isObject(data) ) {
+            for( var equipmentId in data ) {
+              points = points.concat(data[equipmentId])
+            }
+          } else {
+            points = data
+          }
+          return {data: points}
+        },
+        function( error) {
+          return error
+        }
+
+      )
+
+    }
+
+
+    /**
+     * Public API
+     */
+    return {
+      getCurrentPoints: getCurrentPoints
+    }
+  }]).
+
+  controller('gbEquipmentController', ['$scope', '$stateParams', 'equipment',
+    function($scope, $stateParams, equipment) {
+      var self = this,
+          microgridId       = $stateParams.microgridId,
+          navigationElement = $stateParams.navigationElement
+
+      $scope.shortName = 'loading...'
+      $scope.tabs = {
+        measurements: false,
+        properties: false
+      }
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return
+
+      $scope.name = navigationElement.name || navigationElement.shortName
+
+      var onePieceOfEquipment = navigationElement.equipmentChildren.length === 0
+      $scope.tabs = {
+        measurements: true,
+        properties: onePieceOfEquipment,
+        points: true
+      }
+
+      $scope.pointsPromise = equipment.getCurrentPoints( true)
+    }
+  ]).
+
+  directive('gbEquipment', function() {
+    return {
+      restrict:    'E', // Element name
+      scope:       true,
+      templateUrl: 'greenbus.views.template/equipment/equipment.html',
+      controller:  'gbEquipmentController'
+    }
+  })
+
+
+
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
 angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.views.navigation', 'greenbus.views.rest']).
   
-  controller( 'gbEssesController', ['$scope', '$filter', 'rest', 'measurement', '$location', function( $scope, $filter, rest, measurement, $location) {
+  controller( 'gbEssesController', ['$scope', '$filter', '$stateParams', 'rest', 'measurement', '$location', function( $scope, $filter, $stateParams, rest, measurement, $location) {
     var PT = {
           Point: 'Point',
           Power: 'OutputPower',
@@ -1411,13 +1561,29 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
         }
 
     $scope.ceses = []     // our mappings of data from the server
-    $scope.equipment = [] // from the server. TODO this should not be scope, but get assigns to scope.
     $scope.searchText = ''
     $scope.sortColumn = 'name'
     $scope.reverse = false
     var pointIdToInfoMap = {},
         searchArgs = $location.search(),
         sourceUrl = searchArgs.sourceUrl || null
+
+    var microgridId       = $stateParams.microgridId,
+        navigationElement = $stateParams.navigationElement
+
+    // Initialized from URL or menu click or both
+    //
+    if( ! navigationElement)
+      return
+
+    var equipment = navigationElement.equipmentChildren,
+        equipmentIds = [],
+        equipmentIdMap = {}
+    equipment.forEach( function( eq) {
+      equipmentIdMap[eq.id] = eq
+      equipmentIds.push( eq.id)
+    })
+
 
     var number = $filter('number')
     function formatNumberValue( value) {
@@ -1569,22 +1735,14 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
 
     // Called after get sourceUrl is successful
-    function getEquipmentListener( ) {
+    function getPointsForEquipmentAndSubscribeToMeasurements( ) {
       var cesIndex, pointsUrl,
           pointIds = [],
-          pointTypesQueryString = rest.queryParameterFromArrayOrString( 'pointTypes', POINT_TYPES),
-          equipmentIdMap = {},
-          equipmentIds = [],
-          equipmentIdsQueryString = ''
-
-      $scope.equipment.forEach( function( eq) {
-        equipmentIdMap[eq.id] = eq
-        equipmentIds.push( eq.id)
-      })
-      equipmentIdsQueryString = rest.queryParameterFromArrayOrString( 'equipmentIds', equipmentIds)
+          pointTypesQueryParams = rest.queryParameterFromArrayOrString( 'pointTypes', POINT_TYPES),
+          equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
 
 
-      pointsUrl = '/models/1/points?' + equipmentIdsQueryString + '&' + pointTypesQueryString
+      pointsUrl = '/models/1/points?' + equipmentIdsQueryParams + '&' + pointTypesQueryParams
       rest.get( pointsUrl, 'points', $scope, function( data) {
         var sampleData = {
           'e57170fd-2a13-4420-97ab-d1c0921cf60d': [
@@ -1614,7 +1772,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
             POINT_TYPES.forEach( function( typ) {
               point = getPointByType( points, typ)
               if( point) {
-                console.log( 'gbEssesController.getEquipmentListener point: name=' + point.name + ', types = ' + point.types)
+                console.log( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements point: name=' + point.name + ', types = ' + point.types)
                 pointIdToInfoMap[point.id] = {
                   'cesIndex': cesIndex,
                   'type': getInterestingType( point.types),
@@ -1622,13 +1780,13 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
                 }
                 pointIds.push( point.id)
               } else {
-                console.error( 'gbEssesController.getEquipmentListener  GET /models/n/points entity[' + eqId + '] does not have point with type ' + typ)
+                console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points entity[' + eqId + '] does not have point with type ' + typ)
               }
 
             })
             $scope.ceses.push( makeCes( equipmentIdMap[eqId]))
           } else {
-            console.error( 'gbEssesController.getEquipmentListener  GET /models/n/points did not return UUID=' + eqId)
+            console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points did not return UUID=' + eqId)
           }
         })
 
@@ -1637,11 +1795,12 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
     }
 
-    var eqTypes = rest.queryParameterFromArrayOrString( 'eqTypes', ['CES', 'DESS'])
-    var pointTypes = rest.queryParameterFromArrayOrString( 'pointTypes', POINT_TYPES)
-    var url = '/equipmentwithpointsbytype?' + eqTypes + '&' + pointTypes
-//    reef.get( url, 'equipment', $scope, $scope.getSuccessListener);
-    rest.get( sourceUrl, 'equipment', $scope, getEquipmentListener);
+    //var eqTypes = rest.queryParameterFromArrayOrString( 'eqTypes', ['ESS'])
+    //var pointTypes = rest.queryParameterFromArrayOrString( 'pointTypes', POINT_TYPES)
+    //var url = '/equipmentwithpointsbytype?' + eqTypes + '&' + pointTypes
+    //rest.get( sourceUrl, 'equipment', $scope, getPointsForEquipmentAndSubscribeToMeasurements);
+
+    getPointsForEquipmentAndSubscribeToMeasurements()
   }]).
 
 
@@ -2269,9 +2428,8 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     var subscribeToAlarms = {
-      subscribeToAlarms: {
-        limit: $scope.limit
-      }
+      name: 'SubscribeToAlarms',
+      limit: $scope.limit
     }
 
     // Id is accessed by demo script to push alarms.
@@ -2329,10 +2487,9 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     var subscribeToEvents = {
-      subscribeToEvents: {
-        //eventTypes: [],
-        limit: $scope.limit
-      }
+      name: 'SubscribeToEvents',
+      //eventTypes: [],
+      limit: $scope.limit
     }
     // Id is accessed by demo script to push events.
     $scope._subscribeToEventsId = subscription.subscribe( subscribeToEvents, $scope, $scope.onEvent, $scope.onError)
@@ -2421,19 +2578,17 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
 
     var subscribeToAlarms = {
-      subscribeToAlarms: {
-        //eventTypes: [],
-        limit: $scope.limit
-      }
+      name: 'SubscribeToAlarms',
+      //eventTypes: [],
+      limit: $scope.limit
     }
     // Id is accessed by demo script to push alarms.
     $scope._subscribeToAlarmsId = subscription.subscribe( subscribeToAlarms, $scope, onAlarm, onAlarmError)
 
     var subscribeToEvents = {
-      subscribeToEvents: {
-        //eventTypes: [],
-        limit: $scope.limit
-      }
+      name: 'SubscribeToEvents',
+      //eventTypes: [],
+      limit: $scope.limit
     }
     // Id is accessed by demo script to push events.
     $scope._subscribeToEventsId = subscription.subscribe( subscribeToEvents, $scope, onEvent, onEventError)
@@ -3525,11 +3680,10 @@ MeasurementHistory.prototype.subscribe = function(scope, constraints, subscriber
   var self = this,
       now = Date.now(),
       json = {
-        subscribeToMeasurementHistory: {
-          'pointId':  this.point.id,
-          'timeFrom': now - constraints.time,
-          'limit':    constraints.size
-        }
+        name: 'SubscribeToMeasurementHistory',
+        'pointId':  this.point.id,
+        'timeFrom': now - constraints.time,
+        'limit':    constraints.size
       }
 
 
@@ -3674,30 +3828,40 @@ MeasurementHistory.prototype.removeSubscriber = function(subscriber) {
  */
 
 
-angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'greenbus.views.navigation', 'greenbus.views.rest', 'greenbus.views.request', 'greenbus.views.selection']).
+angular.module( 'greenbus.views.measurement',
+  [
+    'ui.router',
+    'greenbus.views.subscription',
+    'greenbus.views.navigation',
+    'greenbus.views.equipment',
+    'greenbus.views.rest',
+    'greenbus.views.request',
+    'greenbus.views.selection'
+  ]).
+
   factory('pointIdToMeasurementHistoryMap', function() {
     return {};
   }).
 
 
-  /**
-   * Multiple clients can subscribe to measurements for the same point using one server subscription.
-   *
-   * Give a point UUID, get the name and a subscription.
-   * Each point may have multiple subscriptions
-   *
-   * @param subscription
-   * @param pointIdToMeasurementHistoryMap - Map of point.id to MeasurementHistory
-   * @constructor
-   */
-  factory('measurement', ['subscription', 'pointIdToMeasurementHistoryMap', '$filter', function( subscription, pointIdToMeasurementHistoryMap, $filter) {
-    var number = $filter( 'number' )
+/**
+ * Multiple clients can subscribe to measurements for the same point using one server subscription.
+ *
+ * Give a point UUID, get the name and a subscription.
+ * Each point may have multiple subscriptions
+ *
+ * @param subscription
+ * @param pointIdToMeasurementHistoryMap - Map of point.id to MeasurementHistory
+ * @constructor
+ */
+  factory('measurement', ['subscription', 'pointIdToMeasurementHistoryMap', '$filter', function(subscription, pointIdToMeasurementHistoryMap, $filter) {
+    var number = $filter('number')
 
-    function formatMeasurementValue( value ) {
-      if( typeof value === 'boolean' || isNaN( value ) || !isFinite( value ) ) {
+    function formatMeasurementValue(value) {
+      if( typeof value === 'boolean' || isNaN(value) || !isFinite(value) ) {
         return value
       } else {
-        return number( value )
+        return number(value)
       }
     }
 
@@ -3717,10 +3881,10 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     function subscribeWithHistory(scope, point, constraints, subscriber, notify) {
       console.log('measurement.subscribeWithHistory ')
 
-      var measurementHistory = pointIdToMeasurementHistoryMap[ point.id]
+      var measurementHistory = pointIdToMeasurementHistoryMap[point.id]
       if( !measurementHistory ) {
         measurementHistory = new MeasurementHistory(subscription, point)
-        pointIdToMeasurementHistoryMap[ point.id] = measurementHistory
+        pointIdToMeasurementHistoryMap[point.id] = measurementHistory
       }
 
       return measurementHistory.subscribe(scope, constraints, subscriber, notify)
@@ -3734,19 +3898,19 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     function unsubscribeWithHistory(point, subscriber) {
       console.log('measurement.unsubscribeWithHistory ')
 
-      var measurementHistory = pointIdToMeasurementHistoryMap[ point.id]
+      var measurementHistory = pointIdToMeasurementHistoryMap[point.id]
       if( measurementHistory )
         measurementHistory.unsubscribe(subscriber)
       else
         console.error('ERROR: meas.unsubscribe point.id: ' + point.id + ' was never subscribed.')
     }
 
-    function onMeasurements( measurements, subscriber, notify) {
-      measurements.forEach( function( pm) {
-        pm.measurement.value = formatMeasurementValue( pm.measurement.value )
+    function onMeasurements(measurements, subscriber, notify) {
+      measurements.forEach(function(pm) {
+        pm.measurement.value = formatMeasurementValue(pm.measurement.value)
       })
-      if( notify)
-        notify.call( subscriber, measurements)
+      if( notify )
+        notify.call(subscriber, measurements)
     }
 
     /**
@@ -3765,26 +3929,26 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       //console.log('measurement.subscribe')
       return subscription.subscribe(
         {
-          subscribeToMeasurements: { 'pointIds': pointIds }
+          name: 'SubscribeToMeasurements',
+          pointIds: pointIds,
         },
         scope,
-        function ( subscriptionId, type, measurements ) {
-          if( type === 'measurements')
-            onMeasurements( measurements, subscriber, notify)
+        function(subscriptionId, type, measurements) {
+          if( type === 'measurements' )
+            onMeasurements(measurements, subscriber, notify)
           else
-            console.error( 'measurement.subscribe message of unknown type: "' + type + '"' )
+            console.error('measurement.subscribe message of unknown type: "' + type + '"')
           scope.$digest()
         },
-        function ( error, message ) {
-          console.error( 'measurement.subscribe ERROR: ' + error + ', message: ' + message)
+        function(error, message) {
+          console.error('measurement.subscribe ERROR: ' + error + ', message: ' + message)
         }
       )
     }
 
-    function unsubscribe( subscriptionId) {
-      subscription.unsubscribe( subscriptionId)
+    function unsubscribe(subscriptionId) {
+      subscription.unsubscribe(subscriptionId)
     }
-
 
 
     /**
@@ -3793,13 +3957,13 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     return {
       subscribeWithHistory:   subscribeWithHistory,
       unsubscribeWithHistory: unsubscribeWithHistory,
-      subscribe: subscribe,
-      unsubscribe: unsubscribe
+      subscribe:              subscribe,
+      unsubscribe:            unsubscribe
     }
   }]).
 
-  controller( 'gbMeasurementsController', ['$scope', '$window', '$routeParams', 'rest', 'navigation', 'subscription', 'measurement', 'request', '$timeout',
-    function( $scope, $window, $routeParams, rest, navigation, subscription, measurement, request, $timeout) {
+  controller('gbMeasurementsController', ['$scope', '$stateParams', 'rest', 'navigation', 'subscription', 'measurement', 'equipment', 'request', '$timeout',
+    function($scope, $stateParams, rest, navigation, subscription, measurement, equipment, request, $timeout) {
       var self = this
       $scope.points = []
       $scope.pointsFiltered = []
@@ -3810,16 +3974,33 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       $scope.sortColumn = 'name'
       $scope.reverse = false
 
-      var navId = $routeParams.navId,
-          depth = rest.queryParameterFromArrayOrString( 'depth', $routeParams.depth ),
-          equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', $routeParams.equipmentIds)
 
-      function findPoint( id ) {
-        var index = findPointIndex( id)
+
+
+      var depth, equipmentIds, equipmentIdsQueryParams,
+          microgridId       = $stateParams.microgridId,
+          navigationElement = $stateParams.navigationElement
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return
+
+      if( navigationElement.equipmentChildren.length > 0 ) {
+        equipmentIds = navigationElement.equipmentChildren.map( function( child) { return child.id })
+        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
+      } else {
+        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', navigationElement.id)
+      }
+      // Rest API /models/1/points?equipmentIds=... depth defaults to 1. If equipment is microgrid, we need deeper.
+      depth = rest.queryParameterFromArrayOrString('depth', '9999')
+
+      function findPoint(id) {
+        var index = findPointIndex(id)
         return index >= 0 ? $scope.points[index] : null
       }
 
-      function findPointIndex( id ) {
+      function findPointIndex(id) {
         var i, point,
             length = $scope.points.length
 
@@ -3831,214 +4012,215 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
         return -1
       }
 
-      function findPointBy( testTrue ) {
+      function findPointBy(testTrue) {
         var i, point,
             length = $scope.points.length
 
         for( i = 0; i < length; i++ ) {
           point = $scope.points[i]
-          if( testTrue( point ) )
+          if( testTrue(point) )
             return point
         }
         return null
       }
 
-      $scope.selectAllChanged = function( state) {
+      $scope.selectAllChanged = function(state) {
         $scope.selectAllState = state
       }
 
-      $scope.chartAddPointById = function( id) {
-        var point = findPoint( id)
+      $scope.chartAddPointById = function(id) {
+        var point = findPoint(id)
 
         if( point )
-          request.push( 'gb-chart.addChart', [point])
+          request.push('gb-chart.addChart', [point])
         else
-          console.error( 'Can\'t find point by id: ' + id)
+          console.error('Can\'t find point by id: ' + id)
       }
 
       $scope.chartAddSelectedPoints = function() {
         // Add all measurements that are checked and visible.
-        var points = $scope.pointsFiltered.filter( function ( m ) {
+        var points = $scope.pointsFiltered.filter(function(m) {
           return m._checked === 1
-        } )
+        })
 
         if( points.length > 0 ) {
-          request.push( 'gb-chart.addChart', points)
+          request.push('gb-chart.addChart', points)
         }
       }
 
 
-
-      $scope.rowClasses = function( point) {
+      $scope.rowClasses = function(point) {
         return point.rowDetail ? 'gb-row-selected-detail animate-repeat'
           : point.rowSelected ? 'gb-point gb-row-selected animate-repeat'
           : point.commandSet ? 'gb-point gb-row-selectable animate-repeat'
           : 'gb-point animate-repeat'
       }
-      $scope.togglePointRowById = function( id) {
-        if( !id)
+      $scope.togglePointRowById = function(id) {
+        if( !id )
           return  // detail row doesn't have an id.
 
         var point, pointDetails,
-            index = findPointIndex( id)
-        if( index < 0)
+            index = findPointIndex(id)
+        if( index < 0 )
           return
 
         point = $scope.points[index]
-        if( ! point.commandSet)
+        if( !point.commandSet )
           return
 
         if( point.rowSelected ) {
-          $scope.points.splice( index + 1, 1)
+          $scope.points.splice(index + 1, 1)
           point.rowSelected = false
         } else {
 
           pointDetails = {
-            point: point,
-            name: point.name + ' ',
-            rowDetail: true,
+            point:      point,
+            name:       point.name + ' ',
+            rowDetail:  true,
             commandSet: point.commandSet
           }
-          $scope.points.splice( index + 1, 0, pointDetails)
+          $scope.points.splice(index + 1, 0, pointDetails)
           point.rowSelected = true
         }
 
       }
 
 
-      $scope.search = function( point) {
+      $scope.search = function(point) {
         var s = $scope.searchText
-        if( s === undefined || s === null || s.length === 0)
+        if( s === undefined || s === null || s.length === 0 )
           return true
         s = s.toLowerCase()
 
         // If it's a rowDetail, we return true if the original row is show. Use the original row as the search filter.
-        if( point.rowDetail)
+        if( point.rowDetail )
           point = point.point
 
-        var measValue = '' + (point.currentMeasurement ? point.currentMeasurement.value : ''),
-            foundCommandTypes = point.commandTypes && point.commandTypes.indexOf(s)!==-1,
-            foundName = point.name.toLowerCase().indexOf( s)!==-1
+        var measValue         = '' + (point.currentMeasurement ? point.currentMeasurement.value : ''),
+            foundCommandTypes = point.commandTypes && point.commandTypes.indexOf(s) !== -1,
+            foundName         = point.name.toLowerCase().indexOf(s) !== -1
 
-        return foundName || measValue.toLowerCase().indexOf(s)!==-1 || point.unit.toLowerCase().indexOf( s)!==-1 || point.pointType.toLowerCase().indexOf( s)!==-1 || foundCommandTypes
+        return foundName || measValue.toLowerCase().indexOf(s) !== -1 || point.unit.toLowerCase().indexOf(s) !== -1 || point.pointType.toLowerCase().indexOf(s) !== -1 || foundCommandTypes
       }
 
 
-      function onMeasurements( measurements ) {
-        measurements.forEach( function( pm){
-          var point = findPoint( pm.point.id )
+      function onMeasurements(measurements) {
+        measurements.forEach(function(pm) {
+          var point = findPoint(pm.point.id)
           if( point ) {
             //pm.measurement.value = formatMeasurementValue( pm.measurement.value )
             point.currentMeasurement = pm.measurement
           } else {
-            console.error( 'MeasurementsController.onPointMeasurement could not find point.id = ' + pm.point.id )
+            console.error('MeasurementsController.onPointMeasurement could not find point.id = ' + pm.point.id)
           }
         })
         $scope.$digest()
       }
 
-      function subscribeToMeasurements( pointIds) {
-        measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
+      function subscribeToMeasurements(pointIds) {
+        measurement.subscribe($scope, pointIds, {}, self, onMeasurements)
       }
 
 
-      function nameFromTreeNode( treeNode) {
-        if( treeNode)
+      function nameFromTreeNode(treeNode) {
+        if( treeNode )
           return treeNode.label
         else
           return '...'
       }
 
-      function getEquipmentIds( treeNode) {
-        var result = []
-        treeNode.children.forEach( function( node){
-          if( node.containerType && node.containerType !== 'Sourced')
-            result.push( node.id)
-        })
-        return result
-      }
-      function navIdListener( id, treeNode) {
-        $scope.equipmentName = nameFromTreeNode( treeNode) + ' '
-        var equipmentIds = getEquipmentIds( treeNode)
-        var equipmentIdsQueryParams = rest.queryParameterFromArrayOrString( 'equipmentIds', equipmentIds )
+      //function getEquipmentIds(treeNode) {
+      //  var result = []
+      //  treeNode.children.forEach(function(node) {
+      //    if( node.containerType && node.containerType !== 'Sourced' )
+      //      result.push(node.id)
+      //  })
+      //  return result
+      //}
+      //
+      //function navIdListener(id, treeNode) {
+      //  $scope.equipmentName = nameFromTreeNode(treeNode) + ' '
+      //  var equipmentIds = getEquipmentIds(treeNode)
+      //  var equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
+      //
+      //  var delimeter = '?'
+      //  var url = '/models/1/points'
+      //  if( equipmentIdsQueryParams.length > 0 ) {
+      //    url += delimeter + equipmentIdsQueryParams
+      //    delimeter = '&'
+      //    $scope.equipmentName = nameFromTreeNode(treeNode) + ' '
+      //  }
+      //  if( depth.length > 0 )
+      //    url += delimeter + depth
+      //
+      //  rest.get(url, 'points', $scope, function(data) {
+      //    // data is either a array of points or a map of equipmentId -> points[]
+      //    // If it's an object, convert it to a list of points.
+      //    if( angular.isObject(data) ) {
+      //      $scope.points = []
+      //      for( var equipmentId in data ) {
+      //        $scope.points = $scope.points.concat(data[equipmentId])
+      //      }
+      //    }
+      //    var pointIds = processPointsAndReturnPointIds($scope.points)
+      //    subscribeToMeasurements(pointIds)
+      //    getPointsCommands(pointIds)
+      //  })
+      //}
 
-        var delimeter = '?'
-        var url = '/models/1/points'
-        if( equipmentIdsQueryParams.length > 0) {
-          url += delimeter + equipmentIdsQueryParams
-          delimeter = '&'
-          $scope.equipmentName = nameFromTreeNode( treeNode) + ' '
-        }
-        if( depth.length > 0)
-          url += delimeter + depth
-
-        rest.get( url, 'points', $scope, function(data) {
-          // data is either a array of points or a map of equipmentId -> points[]
-          // If it's an object, convert it to a list of points.
-          if( angular.isObject( data)) {
-            $scope.points = []
-            for( var equipmentId in data) {
-              $scope.points = $scope.points.concat( data[equipmentId])
-            }
-          }
-          var pointIds = processPointsAndReturnPointIds( $scope.points)
-          subscribeToMeasurements( pointIds)
-          getPointsCommands( pointIds)
-        })
-      }
-
-      function processPointsAndReturnPointIds( points) {
-        var pointIds = [],
+      function processPointsAndReturnPointIds(points) {
+        var pointIds           = [],
             currentMeasurement = {
-              value: '-',
-              time: null,
+              value:        '-',
+              time:         null,
               shortQuality: '',
-              longQuality: '',
-              validity: 'NOTLOADED',
-              expandRow: false,
-              commandSet: undefined
+              longQuality:  '',
+              validity:     'NOTLOADED',
+              expandRow:    false,
+              commandSet:   undefined
             }
-        points.forEach( function ( point ) {
-          point.currentMeasurement = angular.extend( {}, currentMeasurement)
-          pointIds.push( point.id )
-          if( typeof point.pointType !== 'string')
-            console.error( '------------- point: ' + point.name + ' point.pointType "' + point.pointType + '" is empty or null.' )
-          if( typeof point.unit !== 'string')
+        points.forEach(function(point) {
+          point.currentMeasurement = angular.extend({}, currentMeasurement)
+          pointIds.push(point.id)
+          if( typeof point.pointType !== 'string' )
+            console.error('------------- point: ' + point.name + ' point.pointType "' + point.pointType + '" is empty or null.')
+          if( typeof point.unit !== 'string' )
             point.unit = ''
 
         })
         return pointIds
       }
 
-
-
-      function notifyWhenEquipmentNamesAreAvailable( equipmentId) {
-        $scope.equipmentName = nameFromEquipmentIds( $routeParams.equipmentIds) + ' '
-      }
-
-      function nameFromEquipmentIds( equipmentIds) {
-        var result = ''
-        if( equipmentIds) {
-
-          if( angular.isArray( equipmentIds)) {
-            equipmentIds.forEach( function( equipmentId, index) {
-              var treeNode = navigation.getTreeNodeByEquipmentId( equipmentId, notifyWhenEquipmentNamesAreAvailable)
-              if( index === 0)
-                result += nameFromTreeNode( treeNode)
-              else
-                result += ', ' +nameFromTreeNode( treeNode)
-            })
-          } else {
-            var treeNode = navigation.getTreeNodeByEquipmentId( equipmentIds, notifyWhenEquipmentNamesAreAvailable)
-            result = nameFromTreeNode( treeNode)
-          }
-        }
-        return result
-      }
+      // Now getting name from NavTreeController.menuSelect and menuSelect waits until the name is loaded before calling us.
+      //
+      //function notifyWhenEquipmentNamesAreAvailable(equipmentId) {
+      //  $scope.equipmentName = nameFromEquipmentIds($stateParams.equipmentIds) + ' '
+      //}
+      //
+      //function nameFromEquipmentIds(equipmentIds) {
+      //  var result = ''
+      //  if( equipmentIds ) {
+      //
+      //    if( angular.isArray(equipmentIds) ) {
+      //      equipmentIds.forEach(function(equipmentId, index) {
+      //        var treeNode = navigation.getTreeNodeByEquipmentId(equipmentId, notifyWhenEquipmentNamesAreAvailable)
+      //        if( index === 0 )
+      //          result += nameFromTreeNode(treeNode)
+      //        else
+      //          result += ', ' + nameFromTreeNode(treeNode)
+      //      })
+      //    } else {
+      //      var treeNode = navigation.getTreeNodeByEquipmentId(equipmentIds, notifyWhenEquipmentNamesAreAvailable)
+      //      result = nameFromTreeNode(treeNode)
+      //    }
+      //  }
+      //  return result
+      //}
 
       // commandType: CONTROL, SETPOINT_INT, SETPOINT_DOUBLE, SETPOINT_STRING
       var exampleControls = [
-        {commandType:  'CONTROL',
+        {
+          commandType: 'CONTROL',
           displayName: 'NE_City.PCC_CB.Close',
           endpoint:    'ba01993f-d32c-43d4-9afc-8e5302ae5de8',
           id:          '65840820-aa1c-4215-b063-32affaddd465',
@@ -4054,18 +4236,18 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
       ]
 
       var CommandRest = {
-        select: function ( accessMode, commandIds, success, failure) {
+        select:   function(accessMode, commandIds, success, failure) {
           var arg = {
             accessMode: accessMode,
             commandIds: commandIds
           }
-          rest.post( '/models/1/commandlock', arg, null, $scope, success, failure)
+          rest.post('/models/1/commandlock', arg, null, $scope, success, failure)
         },
-        deselect: function( lockId, success, failure) {
-          rest.delete( '/models/1/commandlock/' + lockId, null, $scope, success, failure)
+        deselect: function(lockId, success, failure) {
+          rest.delete('/models/1/commandlock/' + lockId, null, $scope, success, failure)
         },
-        execute: function( commandId, args, success, failure) {
-          rest.post( '/models/1/commands/' + commandId, args, null, $scope, success, failure)
+        execute:  function(commandId, args, success, failure) {
+          rest.post('/models/1/commands/' + commandId, args, null, $scope, success, failure)
         }
       }
 
@@ -4073,84 +4255,67 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
        * UUIDs are 36 characters long. The URL max is 2048
        * @param pointIds
        */
-      function getPointsCommands( pointIds ) {
+      function getPointsCommands(pointIds) {
         var url = '/models/1/points/commands'
 
-        rest.post( url, pointIds, null, $scope, function( data) {
+        rest.post(url, pointIds, null, $scope, function(data) {
           var point
           // data is map of pointId -> commands[]
-          for( var pointId in data) {
-            point = findPoint( pointId)
-            if( point) {
-              point.commandSet = new CommandSet( point, data[pointId], CommandRest, $timeout)
+          for( var pointId in data ) {
+            point = findPoint(pointId)
+            if( point ) {
+              point.commandSet = new CommandSet(point, data[pointId], CommandRest, $timeout)
               point.commandTypes = point.commandSet.getCommandTypes().toLowerCase()
-              console.log( 'commandTypes: ' + point.commandTypes)
+              console.log('commandTypes: ' + point.commandTypes)
             }
           }
         })
 
       }
 
-      // 'NE_City.Big_Hotel.DR2_cntl'
-      // 'NE_City.Big_Hotel.DR3_cntl'
+      function getPointsAndSubscribeToMeasurements() {
 
-      if( navId) {
-        // If treeNode exists, it's returned immediately. If it's still being loaded,
-        // navIdListener will be called when it's finally available.
-        //
-        var treeNode = navigation.getTreeNodeByMenuId( navId, navIdListener)
-        if( treeNode)
-          navIdListener( navId, treeNode)
-
-      } else {
-
-        var delimeter = '?'
-        var url = '/models/1/points'
-        if( equipmentIdsQueryParams.length > 0) {
-          url += delimeter + equipmentIdsQueryParams
-          delimeter = '&'
-          $scope.equipmentName = nameFromEquipmentIds( $routeParams.equipmentIds) + ' '
-        }
-        if( depth.length > 0)
-          url += delimeter + depth
-
-        rest.get( url, 'points', $scope, function( data) {
-          // data is either a array of points or a map of equipmentId -> points[]
-          // If it's an object, convert it to a list of points.
-          if( angular.isObject( data)) {
-            $scope.points = []
-            for( var equipmentId in data) {
-              $scope.points = $scope.points.concat( data[equipmentId])
-            }
+        var promise = $scope.pointsPromise || equipment.getCurrentPoints( true)
+        promise.then(
+          function( response) {
+            $scope.points = response.data
+            var pointIds = processPointsAndReturnPointIds($scope.points)
+            subscribeToMeasurements(pointIds)
+            getPointsCommands(pointIds)
+            return response // for the then() chain
+          },
+          function( error) {
+            return error
           }
-
-          var pointIds = processPointsAndReturnPointIds( $scope.points)
-          subscribeToMeasurements( pointIds)
-          getPointsCommands( pointIds)
-        })
+        )
       }
 
+      getPointsAndSubscribeToMeasurements()
     }
   ]).
 
-  directive( 'gbMeasurements', function(){
+  directive('gbMeasurements', function() {
     return {
-      restrict: 'E', // Element name
+      restrict:    'E', // Element name
       // The template HTML will replace the directive.
-      replace: true,
-      transclude: true,
-      scope: true,
+      replace:     true,
+      scope:       {
+        pointsPromise: '=?'
+      },
       templateUrl: 'greenbus.views.template/measurement/measurements.html',
-      controller: 'gbMeasurementsController'
+      controller:  'gbMeasurementsController'
     }
   }).
 
   filter('validityIcon', function() {
     return function(validity) {
-      switch( validity) {
-        case 'GOOD': return 'glyphicon glyphicon-ok validity-good';
-        case 'QUESTIONABLE': return 'glyphicon glyphicon-question-sign validity-questionable';
-        case 'NOTLOADED': return 'validity-notloaded'
+      switch( validity ) {
+        case 'GOOD':
+          return 'glyphicon glyphicon-ok validity-good';
+        case 'QUESTIONABLE':
+          return 'glyphicon glyphicon-question-sign validity-questionable';
+        case 'NOTLOADED':
+          return 'validity-notloaded'
         case 'INVALID':
           return 'glyphicon glyphicon-exclamation-sign validity-invalid';
         default:
@@ -4162,13 +4327,18 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     return function(type, unit) {
       var image
 
-      if( unit === 'raw') {
+      if( unit === 'raw' ) {
         image = '../../images/pointRaw.png'
       } else {
-        switch( type) {
-          case 'ANALOG': image = '/images/pointAnalog.png'; break;
-          case 'STATUS': image = '/images/pointStatus.png'; break;
-          default: image = '/images/pointRaw.png';
+        switch( type ) {
+          case 'ANALOG':
+            image = '/images/pointAnalog.png';
+            break;
+          case 'STATUS':
+            image = '/images/pointStatus.png';
+            break;
+          default:
+            image = '/images/pointRaw.png';
         }
       }
 
@@ -4179,13 +4349,18 @@ angular.module('greenbus.views.measurement', ['greenbus.views.subscription', 'gr
     return function(type, unit) {
       var text
 
-      if( unit === 'raw') {
+      if( unit === 'raw' ) {
         text = 'raw point'
       } else {
-        switch( type) {
-          case 'ANALOG': text = 'analog point'; break;
-          case 'STATUS': text = 'status point'; break;
-          default: text = 'point with unknown type';
+        switch( type ) {
+          case 'ANALOG':
+            text = 'analog point';
+            break;
+          case 'STATUS':
+            text = 'status point';
+            break;
+          default:
+            text = 'point with unknown type';
         }
       }
 
@@ -4516,6 +4691,12 @@ angular.module('greenbus.views.measurementValue', []).
             var input = element.find( 'input')
             if( input && input.length > 0) {
               input[0].select()
+              //if( input[0].selectionStart !== 0)
+              //  input[0].setSelectionRange( 0, 9999)
+              //if( input[0].hasOwnProperty('selectionStart')) {
+              //  if( input[0].selectionStart !== 0)
+              //    input[0].selectionStart = 0
+              //}
               focusedElement = input[0];
             }
           }
@@ -4562,139 +4743,427 @@ angular.module('greenbus.views.measurementValue', []).
  * the License.
  */
 
-angular.module('greenbus.views.navigation', ['ui.bootstrap', 'greenbus.views.rest']).
-  factory('navigation', ['rest', function( rest){   // was navigation
+angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'greenbus.views.rest']).
+
+/**
+ * Service for getting NavigationElements from server and populating NavTree menu items.
+ * Each level of the NavTree is loaded incrementally based on the NavigationElements and the
+ * current model.
+ *
+ * Goals:
+ *
+ * The view controller waits for the menu items to be loaded before being initialized. The
+ * NavigationElement, in turn, calls menuSelect when items are finished loading (to initialize
+ * the controller).
+ *
+ * When menu item is selected, the NavTreeController needs to pass some information to the target controller.
+ *
+ * Params:
+ *
+ * microgridId - If we're coming from the 'loading' state, there is no microgridId specified in the URL, so we need to
+ *               supply it. Once we have a nested state, the microgridId will be propagated by ui.router; unless,
+ *               of course, we are selecting a menu item under a different microgrid or no microgrid (ex: alarms).
+ * navigationElement: {
+ *   class:             NavigationElement class name or entity type. Examples: NavigationItem, MicroGrid, EquipmentLeaf
+ *   id:                Entity UUID or undefined
+ *   name:              Full entity name
+ *   shortName:         Visible menu tree label
+ *   equipmentChildren: Array of immediate children that are Equipment or EquipmentGroup.
+  *                     Each element is {id, name, shortName}
+ * }
+ *
+ * Usage Scenarios:
+ *
+ * navigation.getNavTree($attrs.href, 'navTree', $scope, $scope.menuSelect)
+ *
+ */
+  factory('navigation', ['rest', function(rest) {   // was navigation
 
     function NotifyCache() {
       this.cache = {}
       this.listeners = {}
     }
-    NotifyCache.prototype.put = function( key, value) {
+
+    NotifyCache.prototype.put = function(key, value) {
       this.cache[key] = value
       var notifyList = this.listeners[key]
-      if( notifyList) {
-        notifyList.forEach( function( notify) { notify( key, value)})
+      if( notifyList ) {
+        notifyList.forEach(function(notify) { notify(key, value)})
         delete this.listeners[key];
       }
     }
-    NotifyCache.prototype.addListener = function( key, listener) {
-      var listenersForId = this.listeners[ key]
-      if( listenersForId)
-        listenersForId.push( listener)
+    NotifyCache.prototype.addListener = function(key, listener) {
+      var listenersForId = this.listeners[key]
+      if( listenersForId )
+        listenersForId.push(listener)
       else
-        this.listeners[ key] = [listener]
+        this.listeners[key] = [listener]
     }
-    NotifyCache.prototype.get = function( key, listener) {
-      var value = this.cache[ key]
-      if( !value && listener)
-        this.addListener( key, listener)
+    NotifyCache.prototype.get = function(key, listener) {
+      var value = this.cache[key]
+      if( !value && listener )
+        this.addListener(key, listener)
       return value
     }
 
 
-
-    var self = this,
-        ContainerType = {
-          MicroGrid: 'MicroGrid',
+    var self                       = this,
+        NavigationClass              = {
+          MicroGrid:      'MicroGrid',
           EquipmentGroup: 'EquipmentGroup',
-          EquipmentLeaf: 'EquipmentLeaf',
-          Sourced: 'Sourced'   // Ex: 'All PVs'. Has sourceUrl, bit no data
+          EquipmentLeaf:  'EquipmentLeaf',
+          Sourced:        'Sourced'   // Ex: 'All PVs'. Has sourceUrl, bit no data
         },
-        equipmentIdToTreeNodeCache = new NotifyCache(),
-        menuIdToTreeNodeCache = new NotifyCache()
+        equipmentIdToTreeNodeCache = new NotifyCache()
 
 
-    function getContainerType( entity) {
-      if( entity.types.indexOf( ContainerType.MicroGrid) >= 0)
-        return ContainerType.MicroGrid;
-      else if( entity.types.indexOf( ContainerType.EquipmentGroup) >= 0)
-        return ContainerType.EquipmentGroup;
+    function getNavigationClass(entity) {
+      if( entity.types.indexOf(NavigationClass.MicroGrid) >= 0 )
+        return NavigationClass.MicroGrid;
+      else if( entity.types.indexOf(NavigationClass.EquipmentGroup) >= 0 )
+        return NavigationClass.EquipmentGroup;
       else
-        return ContainerType.EquipmentLeaf
+        return NavigationClass.EquipmentLeaf
     }
 
-    function stripParentName( childName, parentName) {
-      if( parentName && childName.lastIndexOf(parentName, 0) === 0)
-        return childName.substr( parentName.length + 1) // plus 1 for the dot delimeter
+    function stripParentName(childName, parentName) {
+      if( parentName && childName.lastIndexOf(parentName, 0) === 0 )
+        return childName.substr(parentName.length + 1) // plus 1 for the dot delimeter
       else
         return childName
     }
 
-    function entityToTreeNode( entityWithChildren, parent) {
+    // Make a copy of the children that are equipment (as apposed to other menu items).
+    //
+    // Need a copy of entities to pass to state transition target. If it's just the branch children,
+    // the AngularJS digest consumes all the CPU
+    //
+    function shallowCopyEquipmentChildren( branch) {
+      var equipmentChildren = []
+
+      if(  !branch.children)
+        return equipmentChildren
+
+      branch.children.forEach( function( child) {
+        if( child.class === NavigationClass.EquipmentLeaf || child.class === NavigationClass.EquipmentGroup) {
+          equipmentChildren.push( {
+            id: child.id,
+            name: child.name,
+            shortName: child.shortName
+          })
+        }
+      })
+
+      return equipmentChildren
+    }
+
+    function entityToTreeNode(entityWithChildren, parent) {
       // Could be a simple entity.
       var entity = entityWithChildren.entity || entityWithChildren
 
+      var microgridId, state,
+          shortName = entity.name,
+          name      = entity.name
+
       // Types: (Microgrid, Root), (EquipmentGroup, Equipment), (Equipment, Breaker)
-      var containerType = getContainerType( entity)
-      var route = null
-      switch( containerType) {
-        case ContainerType.MicroGrid:
-          route = '/measurements?equipmentIds=' + entity.id + '&depth=9999'
+      var containerType = getNavigationClass(entity)
+      if( entity.class)
+        console.error( 'entityToTreeNode entity.class=' + entity.class)
+      if( entity.state)
+        console.error( 'entityToTreeNode entity.state=' + entity.state)
+
+      switch( containerType ) {
+        case NavigationClass.MicroGrid:
+          microgridId = entity.id
           break;
-        case ContainerType.EquipmentGroup:
-          route = '/measurements?equipmentIds=' + entity.id + '&depth=9999'
+        case NavigationClass.EquipmentGroup:
+          if( parent ) {
+            if( parent.microgridId )
+              microgridId = parent.microgridId
+            state = entity.state || ( parent.state + 'Id')
+          }
           break;
-        case ContainerType.EquipmentLeaf:
-          route = '/measurements?equipmentIds=' + entity.id
+        case NavigationClass.EquipmentLeaf:
+          if( parent ) {
+            if( parent.microgridId )
+              microgridId = parent.microgridId
+            state = entity.state || ( parent.state + 'Id')
+          }
           break;
-        case ContainerType.Sourced:
+        case NavigationClass.Sourced:
+          if( parent ) {
+            if( parent.microgridId )
+              microgridId = parent.microgridId
+            state = entity.state || ( parent.state + 'Sourced')
+          }
           break;
         default:
       }
 
-      var name = entity.name
-      if( entity.parentName)
-        name = stripParentName( name, entity.parentName)
-      else if( parent)
-        name = stripParentName( name, parent.parentName)
+
+      if( entity.parentName )
+        shortName = stripParentName(name, entity.parentName)
+      else if( parent )
+        shortName = stripParentName(name, parent.parentName)
 
       return {
-        label: name,
-        id: entity.id,
-        type: 'item',
-        types: entity.types,
-        containerType: containerType,
-        route: route,
-        children: entityWithChildren.children ? entityChildrenListToTreeNodes( entityWithChildren.children, entity) : []
+        microgridId:   microgridId,
+        name:          name,
+        label:         shortName,
+        id:            entity.id,
+        type:          'item',
+        types:         entity.types,
+        class:         containerType,
+        state:         state,
+        equipmentChildren: shallowCopyEquipmentChildren(entity),
+        children:      entityWithChildren.children ? entityChildrenListToTreeNodes(entityWithChildren.children, entity) : []
       }
     }
-    function entityChildrenListToTreeNodes( entityWithChildrenList, parent) {
+
+    function entityChildrenListToTreeNodes(entityWithChildrenList, parent) {
       var ra = []
-      entityWithChildrenList.forEach( function( entityWithChildren) {
-        var treeNode = entityToTreeNode( entityWithChildren, parent)
-        ra.push( treeNode)
-        equipmentIdToTreeNodeCache.put( treeNode.id, treeNode)
+      entityWithChildrenList.forEach(function(entityWithChildren) {
+        var treeNode = entityToTreeNode(entityWithChildren, parent)
+        ra.push(treeNode)
+        equipmentIdToTreeNodeCache.put(treeNode.id, treeNode)
       })
       return ra
-    }
-
-    function cacheNavItems( items) {
-      items.forEach( function( item) {
-        if( item.class === 'NavigationItem' || item.class === 'NavigationItemSource')
-          menuIdToTreeNodeCache.put( item.id, item)
-        if( item.children.length > 0)
-          cacheNavItems( item.children)
-      })
     }
 
     /**
      * Convert array of { 'class': 'className', data: {...}} to { 'class': 'className', ...}
      * @param navigationElements
      */
-    function flattenNavigationElements( navigationElements) {
-      navigationElements.forEach( function( element, index) {
+    function flattenNavigationElements(navigationElements) {
+      navigationElements.forEach(function(element, index) {
         var data = element.data;
         delete element.data;
-        angular.extend( element, data)
-        flattenNavigationElements( element.children)
+        angular.extend(element, data)
+        flattenNavigationElements(element.children)
       })
     }
 
+    /**
+     * Breadth-first search of first menu item where selected = true.
+     * If none found, return undefined. This means the designer doesn't want a menu item selected at
+     * startup.
+     *
+     * @param navigationElements The array of Navigation Elements.
+     * @returns The first NavigationElement where selected is true; otherwise return undefined.
+     */
+    function findFirstSelected(navigationElements) {
+      var i, node, selected
+
+      if( !navigationElements || navigationElements.children === 0 )
+        return undefined
+
+      // Breadth first search
+      for( i = 0; i < navigationElements.length; i++ ) {
+        node = navigationElements[i]
+        if( node.selected ) {
+          return node
+        }
+      }
+
+      // Deep search
+      for( i = 0; i < navigationElements.length; i++ ) {
+        node = navigationElements[i]
+        if( node.children && node.children.length > 0 ) {
+          selected = findFirstSelected(node.children)
+          if( selected )
+            return selected
+        }
+      }
+
+      return undefined
+    }
+
+    function callMenuSelectOnFirstSelectedItem_or_callWhenLoaded( navigationElements, scope, menuSelect) {
+      var selected = findFirstSelected(navigationElements)
+      if( selected) {
+        if( selected.sourceUrl) {
+          // @param menuItem  The selected item. The original (current scoped variable 'selected') could have been replaced.
+          selected.selectWhenLoaded = function( menuItem) {
+            menuSelect.call( scope, menuItem)
+          }
+        } else {
+          menuSelect.call( scope, selected)
+        }
+      }
+    }
+
+    function safeCopy(o) {
+      var clone = angular.copy(o);
+      // Angular adds uid to all objects. uid cannot be a duplicate.
+      // Angular will generate a uid for this object on next digest.
+      delete clone.uid;
+      return clone
+    }
+
+    function insertTreeNodeChildren(parent, newChildren) {
+      // Append to any existing children
+      parent.children = parent.children.concat(newChildren)
+      parent.equipmentChildren = shallowCopyEquipmentChildren( parent)
+
+      parent.loading = false
+      if( parent.selectWhenLoaded) {
+        parent.selectWhenLoaded( parent);
+        delete parent.selectWhenLoaded;
+      }
+
+    }
+
+    function getParentStatePrefix( parentState) {
+      var prefix = parentState,
+          index = parentState.indexOf( '.dashboard')
+      if( index >=0)
+        prefix = parentState.substr( 0, index) // index, length
+      return prefix
+    }
+
+    // If child state start with '.', append it to the parentStatePrefix; otherwise,
+    // the child state is absolute and just return it.
+    //
+    function getNestedChildState( parentStatePrefix, childState) {
+      if( childState.indexOf( '.') === 0)
+        return parentStatePrefix + childState
+      else
+        return childState
+    }
+
+    /**
+     * Generate newTreeNodes using parentTree[index] as a template.
+     * - Remove parentTree[index]
+     * - For each newTreeNode, insert at index and copy the removed templates children as childrent for newTreeNode.
+     *
+     * BEFORE:
+     *
+     *   loading...
+     *     Equipment
+     *     Solar
+     *     Energy Storage
+     *
+     * AFTER:
+     *
+     *   Microgrid1
+     *     Equipment1
+     *       Brkr1
+     *       PV1
+     *       ...
+     *     Solar
+     *       PV1
+     *       ...
+     *     Energy Storage
+     *       ...
+     *   Microgrid2
+     *     ...
+     *
+     * @param parentTree
+     * @param index
+     * @param newTreeNodes
+     */
+    function generateNewTreeNodesAtIndexAndPreserveChildren(parentTree, index, newTreeNodes, scope) {
+      var i,
+          oldParent   = parentTree[index],
+          oldChildren = oldParent.children
+      // Remove the child we're replacing.
+      parentTree.splice(index, 1)
+
+      for( i = newTreeNodes.length - 1; i >= 0; i-- ) {
+        var newParentStatePrefix,
+            newParent = newTreeNodes[i]
+        newParent.state = oldParent.state
+        newParentStatePrefix = getParentStatePrefix( newParent.state)
+        parentTree.splice(index, 0, newParent)
+
+        // For each new child that we're adding, replicate the old children.
+        // Replace $parent in the sourceUrl with its current parent.
+        if( oldChildren && oldChildren.length > 0 ) {
+          var i2
+          for( i2 = 0; i2 < oldChildren.length; i2++ ) {
+            var child     = safeCopy(oldChildren[i2]),
+                sourceUrl = child.sourceUrl
+            //child.state = child.state + '.' + node.id
+            child.parentName = newParent.label
+            child.parentId = newParent.id
+            child.microgridId = newParent.microgridId
+            child.state = getNestedChildState( newParentStatePrefix, child.state)
+            // The child is a copy. We need to put it in the cache.
+            // TODO: We need better coordination with  This works, but I think it's a kludge
+            // TODO: We didn't remove the old treeNode from the cache. It might even have a listener that will fire.
+            //putTreeNodeByMenuId(child.state, child)
+            newParent.children.push(child)
+            if( sourceUrl ) {
+              if( sourceUrl.indexOf('$parent') )
+                child.sourceUrl = sourceUrl.replace('$parent', newParent.id)
+              loadTreeNodesFromSource(newParent.children, newParent.children.length - 1, child, scope)
+            }
+          }
+        }
+
+        // If the oldParent was marked selected and waiting until it was loaded; now we're loaded and we
+        // need to select one of these new menu items. We'll pick the first one (which is i === 0).
+        //
+        if( i === 0 && oldParent.selectWhenLoaded) {
+          oldParent.selectWhenLoaded( newParent);
+          delete oldParent.selectWhenLoaded; // just in case
+        }
+
+      }
+    }
+
+    function loadTreeNodesFromSource(parentTree, index, child, scope) {
+      parentTree[index].loading = true
+      getTreeNodes(child.sourceUrl, scope, child, function(newTreeNodes) {
+        switch( child.insertLocation ) {
+          case 'CHILDREN':
+            // Insert the resultant children before any existing static children.
+            insertTreeNodeChildren(child, newTreeNodes)
+            break;
+          case 'REPLACE':
+            generateNewTreeNodesAtIndexAndPreserveChildren(parentTree, index, newTreeNodes, scope)
+            // original child was replaced.
+            child = parentTree[index]
+            break;
+          default:
+            console.error('navTreeController.loadTreeNodesFromSource.getTreeNodes Unknown insertLocation: ' + child.insertLocation)
+        }
+
+        //child.loading = false
+        //if( child.selectWhenLoaded) {
+        //  child.selectWhenLoaded( child);
+        //  delete child.selectWhenLoaded;
+        //}
+      })
+
+    }
+
+    function compareEntityByName( a, b) { return a.name.localeCompare(b.name)}
+    function compareEntityWithChildrenByName( a, b) { return a.entity.name.localeCompare( b.entity.name)}
+
+    function sortEntityWithChildrenByName( entityWithChildrenList) {
+      if( entityWithChildrenList.length === 0)
+        return
+      if( entityWithChildrenList[0].hasOwnProperty( 'name'))
+        entityWithChildrenList.sort( compareEntityByName)
+      else
+        entityWithChildrenList.sort( compareEntityWithChildrenByName)
+    }
+
+    function getTreeNodes(sourceUrl, scope, parent, successListener) {
+      rest.get(sourceUrl, null, scope, function(entityWithChildrenList) {
+        sortEntityWithChildrenByName( entityWithChildrenList)
+        var treeNodes = entityChildrenListToTreeNodes(entityWithChildrenList, parent)
+        successListener(treeNodes)
+      })
+    }
 
     /**
      * Public API
      */
     return {
+
+      NavigationClass: NavigationClass,
 
       /**
        * Get the tree node by equipment Id. This returns immediately with the value
@@ -4705,272 +5174,213 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'greenbus.views.res
        * @param notifyWhenAvailable
        * @returns The current value or null if not available yet.
        */
-      getTreeNodeByEquipmentId: function( equipmentId, notifyWhenAvailable) { return equipmentIdToTreeNodeCache.get( equipmentId, notifyWhenAvailable)},
+      getTreeNodeByEquipmentId: function(equipmentId, notifyWhenAvailable) { return equipmentIdToTreeNodeCache.get(equipmentId, notifyWhenAvailable)},
+
+      getTreeNodes: getTreeNodes,
 
       /**
-       * Get the tree node by menu Id. This returns immediately with the value
-       * or null if the menu item is not available yet. If not available,
-       * notifyWhenAvailable will be called when available.
+       * Main call to get NavigationElements and populate the navTree menu. After retieving the NavigationElements,
+       * start retrieving the model entities referenced by NavigationElements (via sourceUrl).
        *
-       * @param menuId The menu id to retrieve
-       * @param notifyWhenAvailable function( id, treeNode)
-       * @returns TreeNode if available, otherwise null.
+       * @param url URL for retrieving the NavigationElements.
+       * @param name Store the navTree on scope.name
+       * @param scope The controller scope
+       * @param menuSelect Notify method to call when the NavigationElement marked as selected is finished loading.
        */
-      getTreeNodeByMenuId: function( menuId, notifyWhenAvailable) { return menuIdToTreeNodeCache.get( menuId, notifyWhenAvailable)},
+      getNavTree: function(url, name, scope, menuSelect) {
+        rest.get(url, name, scope, function(navigationElements) {
+          // example: [ {class:'NavigationItem', data: {label:Dashboard, state:dashboard, url:#/dashboard, selected:false, children:[]}}, ...]
+          flattenNavigationElements(navigationElements)
 
-      /**
-       *
-       * @param menuId The menu id to put
-       * @param treeNode
-       */
-      putTreeNodeByMenuId: function( menuId, treeNode) { return menuIdToTreeNodeCache.put( menuId, treeNode)},
+          callMenuSelectOnFirstSelectedItem_or_callWhenLoaded( navigationElements, scope, menuSelect)
 
-      getTreeNodes: function( sourceUrl, scope, parent, successListener) {
-        rest.get( sourceUrl, null, scope, function( entityWithChildrenList) {
-          var treeNodes = entityChildrenListToTreeNodes( entityWithChildrenList, parent)
-          successListener( treeNodes)
-        })
-      },
+          navigationElements.forEach(function(node, index) {
+            if( node.sourceUrl )
+              loadTreeNodesFromSource(navigationElements, index, node, scope)
+          })
 
-      getNavTree: function( url, name, scope, successListener) {
-        rest.get( url, name, scope, function(data) {
-          // example: [ {class:'NavigationItem', data: {label:Dashboard, id:dashboard, route:#/dashboard, selected:false, children:[]}}, ...]
-          flattenNavigationElements( data)
-          cacheNavItems( data)
-          if( successListener)
-            successListener( data)
         })
       }
     } // end return Public API
 
   }]). // end factory 'navigation'
 
-  controller('NavBarTopController', ['$scope', '$attrs', '$location', '$cookies', 'rest', function( $scope, $attrs, $location, $cookies, rest) {
+  controller('NavBarTopController', ['$scope', '$attrs', '$location', '$cookies', 'rest', function($scope, $attrs, $location, $cookies, rest) {
     $scope.loading = true
     $scope.applicationMenuItems = []
     $scope.sessionMenuItems = []
     $scope.application = {
-        label: 'loading...',
-        route: ''
+      label: 'loading...',
+      url:   ''
     }
     $scope.userName = $cookies.userName
 
-    $scope.getActiveClass = function( item) {
-        return ( $location.absUrl().indexOf( item.route) >= 0) ? 'active' : ''
+    $scope.getActiveClass = function(item) {
+      return ( $location.absUrl().indexOf(item.url) >= 0) ? 'active' : ''
     }
 
     /**
      * Convert array of { 'class': 'className', data: {...}} to { 'class': 'className', ...}
      * @param navigationElements
      */
-    function flattenNavigationElements( navigationElements) {
-      navigationElements.forEach( function( element, index) {
+    function flattenNavigationElements(navigationElements) {
+      navigationElements.forEach(function(element, index) {
         var data = element.data;
         delete element.data;
-        angular.extend( element, data)
-        flattenNavigationElements( element.children)
+        angular.extend(element, data)
+        flattenNavigationElements(element.children)
       })
     }
 
-    function onSuccess( json) {
-      flattenNavigationElements( json)
+    function onSuccess(json) {
+      flattenNavigationElements(json)
       $scope.application = json[0]
       $scope.applicationMenuItems = json[0].children
       $scope.sessionMenuItems = json[1].children
-      console.log( 'navBarTopController onSuccess ' + $scope.application.label)
+      console.log('navBarTopController onSuccess ' + $scope.application.label)
       $scope.loading = false
     }
 
-    return rest.get( $attrs.href, 'data', $scope, onSuccess)
+    return rest.get($attrs.href, 'data', $scope, onSuccess)
   }]).
-  directive('navBarTop', function(){
-    // <nav-bar-top route='/menus/admin'
+  directive('navBarTop', function() {
+    // <nav-bar-top url='/menus/admin'
     return {
-      restrict: 'E', // Element name
+      restrict:    'E', // Element name
       // This HTML will replace the alarmBanner directive.
-      replace: true,
-      transclude: true,
-      scope: true,
+      replace:     true,
+      transclude:  true,
+      scope:       true,
       templateUrl: 'greenbus.views.template/navigation/navBarTop.html',
-      controller: 'NavBarTopController'
+      controller:  'NavBarTopController'
     }
   }).
 
-  controller('NavListController', ['$scope', '$attrs', 'rest', function( $scope, $attrs, rest) {
-      $scope.navItems = [ {'class': 'NavigationHeader', label: 'loading...'}]
+  controller('NavListController', ['$scope', '$attrs', 'rest', function($scope, $attrs, rest) {
+    $scope.navItems = [{'class': 'NavigationHeader', label: 'loading...'}]
 
-      $scope.getClass = function( item) {
-        switch( item.class) {
-          case 'NavigationDivider': return 'divider'
-          case 'NavigationHeader': return 'nav-header'
-          case 'NavigationItem': return ''
-          case 'NavigationItemSource': return ''
-          default: return ''
-        }
+    $scope.getClass = function(item) {
+      switch( item.class ) {
+        case 'NavigationDivider':
+          return 'divider'
+        case 'NavigationHeader':
+          return 'nav-header'
+        case 'NavigationItemToPage':
+          return ''
+        case 'NavigationItem':
+          return ''
+        case 'NavigationItemSource':
+          return ''
+        default:
+          return ''
       }
+    }
 
-      return rest.get( $attrs.href, 'navItems', $scope)
-    }]).
-  directive('navList', function(){
+    return rest.get($attrs.href, 'navItems', $scope)
+  }]).
+  directive('navList', function() {
     // <nav-list href='/coral/menus/admin'>
     return {
-      restrict: 'E', // Element name
+      restrict:    'E', // Element name
       // This HTML will replace the alarmBanner directive.
-      replace: true,
-      transclude: true,
-      scope: true,
+      replace:     true,
+      transclude:  true,
+      scope:       true,
       templateUrl: 'greenbus.views.template/navigation/navList.html',
-      controller: 'NavListController'
+      controller:  'NavListController'
     }
   }).
 
-  controller('NavTreeController', ['$scope', '$attrs', '$location', '$cookies', 'rest', 'navigation', function( $scope, $attrs, $location, $cookies, rest, navigation) {
+  controller('NavTreeController', ['$scope', '$attrs', '$location', '$state', '$cookies', 'rest', 'navigation', function($scope, $attrs, $location, $state, $cookies, rest, navigation) {
 
     $scope.navTree = [
-        {
-            label: 'All Equipment',
-            children: [],
-            data: {
-                regex: '^[^/]+',
-                count: 0,
-                newMessageCount: 1,
-                depth: 0
-            }
+      {
+        class:    'Loading',
+        state:    'loading',
+        loading:  true,
+        label:    'loading..',
+        children: [],
+        data:     {
+          regex:           '^[^/]+',
+          count:           0,
+          newMessageCount: 1,
+          depth:           0
         }
+      }
     ]
     // GET /models/1/equipment?depth=3&rootTypes=Root
     var sampleGetResponse = [
-        {
-            'entity': {
-                'name': 'Some Microgrid',
-                'id': 'b9e6eac2-be4d-41cf-b82a-423d90515f64',
-                'types': ['Root', 'MicroGrid']
+      {
+        'entity':   {
+          'name':  'Some Microgrid',
+          'id':    'b9e6eac2-be4d-41cf-b82a-423d90515f64',
+          'types': ['Root', 'MicroGrid']
+        },
+        'children': [
+          {
+            'entity':   {
+              'name':  'MG1',
+              'id':    '03c2db16-0f78-4800-adfc-9dff9d4598da',
+              'types': ['Equipment', 'EquipmentGroup']
             },
-            'children': [
-                {
-                    'entity': {
-                        'name': 'MG1',
-                        'id': '03c2db16-0f78-4800-adfc-9dff9d4598da',
-                        'types': ['Equipment', 'EquipmentGroup']
-                    },
-                    'children': []
-                }
-        ]}
+            'children': []
+          }
+        ]
+      }
     ]
 
-    $scope.menuSelect = function( branch) {
-        console.log( 'navTreeController.menuSelect ' + branch.label + ', route=' + branch.route)
-        var url = branch.route
-        if( branch.sourceUrl)
-            url = url + '?sourceUrl=' + encodeURIComponent(branch.sourceUrl)
-        $location.url( url)
-    }
+    $scope.menuSelect = function(branch) {
+      console.log('NavTreeController.menuSelect ' + branch.label + ', state=' + branch.state + ', class=' + branch.class + ', microgridId=' + branch.microgridId)
 
-    function loadTreeNodesFromSource( parentTree, index, child) {
-        navigation.getTreeNodes( child.sourceUrl, $scope, child, function( newTreeNodes) {
-            switch( child.insertLocation) {
-                case 'CHILDREN':
-                    // Insert the resultant children before any existing static children.
-                    child.children = newTreeNodes.concat( child.children)
-                    break;
-                case 'REPLACE':
-                    replaceTreeNodeAtIndexAndPreserveChildren( parentTree, index, newTreeNodes)
-                    break;
-                default:
-                    console.error( 'navTreeController.loadTreeNodesFromSource.getTreeNodes Unknown insertLocation: ' + child.insertLocation)
-            }
-        })
+      if( branch.loading ) {
+        console.errror('NavTreeController.menuSelect LOADING! ' + branch.label + ', state=' + branch.state + ', class=' + branch.class + ', microgridId=' + branch.microgridId)
+        $state.go('loading')
+        return
+      }
 
-    }
-
-    function safeCopy( o) {
-      var clone = angular.copy( o);
-      // Angular adds uid to all objects. uid cannot be a duplicate.
-      // Angular will generate a uid for this object on next digest.
-      delete clone.uid;
-      return clone
-    }
-
-    /**
-     * Replace parentTree[index] with newTreeNodes, but copy any current children and insert them
-     * after the new tree's children.
-     *
-     * BEFORE:
-     *
-     *   loading...
-     *     All PVs
-     *     All Energy Storage
-     *
-     * AFTER:
-     *
-     *   Microgrid1
-     *     MG1
-     *       Equipment1
-     *       ...
-     *     All PVs
-     *     All Energy Storage
-     *
-     *
-     * @param parentTree
-     * @param index
-     * @param newTreeNodes
-     */
-    function replaceTreeNodeAtIndexAndPreserveChildren( parentTree, index, newTreeNodes) {
-        var i,
-            oldChildren = parentTree[index].children
-        // Remove the child we're replacing.
-        parentTree.splice( index, 1)
-        for( i=newTreeNodes.length-1; i >= 0; i-- ) {
-            var node = newTreeNodes[i]
-            parentTree.splice( index, 0, node)
-            // For each new child that we're adding, replicate the old children.
-            // Replace $parent in the sourceUrl with its current parent.
-            if( oldChildren && oldChildren.length > 0) {
-                var i2
-                for( i2 = 0; i2 < oldChildren.length; i2++) {
-                    var child = safeCopy( oldChildren[i2] ),
-                        sourceUrl = child.sourceUrl
-                    child.id = child.id + '.' + node.id
-                    child.route = child.route + '.' + node.id;
-                    child.parentName = node.label
-                    // The child is a copy. We need to put it in the cache.
-                    // TODO: We need better coordination with navigation. This works, but I think it's a kludge
-                    // TODO: We didn't remove the old treeNode from the cache. It might even have a listener that will fire.
-                    navigation.putTreeNodeByMenuId( child.id, child)
-                    node.children.push( child)
-                    if( sourceUrl) {
-                        if( sourceUrl.indexOf( '$parent'))
-                            child.sourceUrl = sourceUrl.replace( '$parent', node.id)
-                        loadTreeNodesFromSource( node.children, node.children.length-1, child)
-                    }
-                }
-            }
+      // For now, we always supply microgridId. This is needed with we're coming from the 'loading' (or 'alarms')
+      // state . It's not needed when we're going from one nested state to another (in the same microgrid).
+      // TODO: Perhaps we should check if the microgridId is already known and isn't changing and not supply it. This might help with microgrid view reloads.
+      //
+      //
+      // NOTE: These params are only passed to the controller if each parameter is defined in
+      // the target state's URL params or non-URL params. Ex: params: {navigationElement: null}
+      //
+      var params = {
+          microgridId:       branch.microgridId,
+          navigationElement: {
+            class:     branch.class,
+            id:        branch.id,
+            types:     branch.types,
+            name:      branch.name,      // full entity name
+            shortName: branch.label,
+            equipmentChildren: branch.equipmentChildren // children that are equipment
+          }
         }
+
+      if( branch.sourceUrl )
+        params.sourceUrl = branch.sourceUrl
+
+      $state.go(branch.state, params)
     }
 
-    function getNavTreeSuccess( data) {
-      data.forEach( function(node, index) {
-        if( node.sourceUrl)
-          loadTreeNodesFromSource( data, index, node)
-      })
-    }
 
-    return navigation.getNavTree( $attrs.href, 'navTree', $scope, getNavTreeSuccess)
+    return navigation.getNavTree($attrs.href, 'navTree', $scope, $scope.menuSelect)
   }]).
-  directive('navTree', function(){
+  directive('navTree', function() {
     // <nav-tree href='/coral/menus/analysis'>
     return {
-      restrict: 'E', // Element name
-      scope: true,
+      restrict:   'E', // Element name
+      scope:      true,
       controller: 'NavTreeController',
-      list: function(scope, element, $attrs) {}
+      list:       function(scope, element, $attrs) {}
     }
-  } ).
+  }).
 
   // If badge count is 0, return empty string.
   filter('badgeCount', function() {
-    return function ( count ) {
-      if ( count > 0 )
+    return function(count) {
+      if( count > 0 )
         return count
       else
         return ''
@@ -5098,6 +5508,241 @@ angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.
 
 
 /**
+ * A table of points for the current equipment in $stateParams.
+ */
+angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment']).
+
+  controller('gbPointsTableController', ['$scope', '$stateParams', 'equipment',
+    function($scope, $stateParams, equipment) {
+      var self = this,
+          microgridId       = $stateParams.microgridId,
+          navigationElement = $stateParams.navigationElement
+
+      $scope.points = []
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return
+      var promise = $scope.pointsPromise || equipment.getCurrentPoints( true)
+      $scope.points = promise.then(
+        function( response) {
+          $scope.points = response.data
+          return response // for the then() chain
+        },
+        function( error) {
+          return error
+        }
+      )
+
+    }
+  ]).
+
+  directive('gbPointsTable', function() {
+    return {
+      restrict:    'E', // Element name
+      // The template HTML will replace the directive.
+      replace:     true,
+      scope: {
+        pointsPromise: '=?'
+      },
+      templateUrl: 'greenbus.views.template/point/pointsTable.html',
+      controller:  'gbPointsTableController'
+    }
+  })
+
+
+
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+
+/**
+ * A table of key/value properties for one piece of equipment.
+ */
+angular.module('greenbus.views.property', [ 'ui.router', 'greenbus.views.rest', 'greenbus.views.subscription']).
+
+  controller('gbPropertiesTableController', ['$scope', '$stateParams', 'rest', 'subscription',
+    function($scope, $stateParams, rest, subscription) {
+      var equipmentId, subscriptionId,
+          self = this,
+          microgridId       = $stateParams.microgridId,
+          navigationElement = $stateParams.navigationElement
+
+      $scope.properties = []
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return
+
+      addTypesToPropertiesList()
+
+      var onePieceOfEquipment = navigationElement.equipmentChildren.length === 0
+      if( !onePieceOfEquipment) {
+        console.error( 'gbPropertiesTableController: more than one child: navigationElement.equipmentChildren.length = ' + navigationElement.equipmentChildren.length)
+        return
+      }
+
+      equipmentId = navigationElement.id
+
+      function addTypesToPropertiesList() {
+        if( navigationElement.types)
+          $scope.properties.push( {
+            key: 'types',
+            value: navigationElement.types.join( ', ')
+          })
+      }
+
+      function findPropertyIndex( key) {
+        var i
+        for( i = 0; i < $scope.properties.length; i++) {
+          var prop = $scope.properties[i]
+          if( key === prop.key)
+            return i
+        }
+        return -1
+      }
+
+      function findProperty( key) {
+
+        var i = findPropertyIndex( key)
+        return i >= 0 ? $scope.properties[i] : undefined
+      }
+
+      function compare(a,b) {
+        if (a.key < b.key)
+          return -1;
+        if (a.key > b.key)
+          return 1;
+        return 0;
+      }
+
+      function applyIsObject( property) {
+        property.isObject = angular.isObject( property.value)
+      }
+
+      function addProperty( property) {
+        $scope.properties.push( property)
+        $scope.properties.sort( compare)
+      }
+
+      function notifyProperty( notificationProperty) {
+        var i,
+            property = notificationProperty.value
+
+        switch( notificationProperty.operation) {
+          case 'ADDED':
+            addProperty( property)
+            break;
+          case 'MODIFIED':
+            var currentProperty = findProperty( property.key)
+            if( currentProperty) {
+              currentProperty.value = property.value
+              applyIsObject( currentProperty)
+            } else {
+              console.error( 'gbPropertiesTableController: notify MODIFIED, but can\'t find existing property key: "' + property.key + '"')
+              addProperty( property)
+            }
+            break;
+          case 'REMOVED':
+            i = findPropertyIndex( property.key)
+            if( i >= 0)
+              $scope.properties.splice(i,1)
+            else
+              console.error( 'gbPropertiesTableController: notify REMOVED, but can\'t find existing property key: "' + property.key + '"')
+        }
+      }
+
+      function subscribeToProperties() {
+
+        var json = {
+          name: 'SubscribeToProperties',
+          entityId:  equipmentId
+        }
+
+        subscriptionId = subscription.subscribe( json, $scope,
+          function( subscriptionId, type, data) {
+
+            switch( type) {
+              case 'notification.property':
+                notifyProperty( data)
+                break
+              case 'properties':
+                $scope.properties = data.slice()
+                addTypesToPropertiesList()
+                $scope.properties.forEach( applyIsObject)
+                $scope.properties.sort( compare)
+                break
+              default:
+                console.error( 'gbPropertiesTableController: unknown type "' + type + '" from subscription notification')
+            }
+            $scope.$digest()
+          },
+          function(error, message) {
+            console.error('gbPropertiesTableController.subscribe ' + error + ', ' + message)
+          }
+        )
+      }
+
+      subscribeToProperties()
+    }
+  ]).
+
+  directive('gbPropertiesTable', function() {
+    return {
+      restrict:    'E', // Element name
+      // The template HTML will replace the directive.
+      replace:     true,
+      scope:       true,
+      templateUrl: 'greenbus.views.template/property/propertiesTable.html',
+      controller:  'gbPropertiesTableController'
+    }
+  })
+
+
+
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+
+/**
  * One controller wants to request a service from another controller. The requester
  * pushes a named request with optional data
  *
@@ -5193,7 +5838,7 @@ angular.module('greenbus.views.request', []).
 
 
 angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
-  factory('rest', ['$rootScope', '$timeout', '$http', '$location', 'authentication', function($rootScope, $timeout, $http, $location, authentication) {
+  factory('rest', ['$rootScope', '$timeout', '$http', '$q', '$location', 'authentication', function($rootScope, $timeout, $http, $q, $location, authentication) {
 
     var self = this;
     var retries = {
@@ -5342,18 +5987,18 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
       httpConfig.headers = authentication.getHttpHeaders()
 
+
+      var deferred = $q.defer()
       // encodeURI because objects like point names can have percents in them.
-      $http.get(encodeURI(url), httpConfig).
-        success(function(json) {
+      $http.get(encodeURI(url), httpConfig).then(
+        function( response) {
+          var json = response.data
           if( $scope) {
             if( name)
               $scope[name] = json;
             $scope.loading = false;
           }
           console.log('rest.get success json.length: ' + json.length + ', url: ' + url);
-
-          if( successListener )
-            successListener(json)
 
           // If the get worked, the service must be up.
           if( status.status != STATUS.UP ) {
@@ -5363,8 +6008,14 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
               description:    ''
             });
           }
-        }).
-        error(function(json, statusCode, headers, config) {
+
+          if( successListener )
+            successListener(json)
+
+          deferred.resolve( {data: json})
+        },
+        function( error) {
+          // error.status
           //   0 Server down
           // 400 Bad Request - request is malformed or missing required fields.
           // 401 Unauthorized
@@ -5374,10 +6025,53 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
           // 500 Internal Server Error
           //
           if( failureListener )
-            failureListener(json, statusCode, headers, config)
-          if( statusCode === 401 || statusCode === 0 )
-            httpRequestError(json, statusCode, headers, config)
-        });
+            failureListener(error.data, error.status, error.headers, error.config)
+          deferred.reject( error)
+
+          if( error.status === 401 || error.status === 0 )
+            httpRequestError(error.data, error.status, error.headers, error.config)
+        }
+      )
+
+      return deferred.promise
+
+
+      // encodeURI because objects like point names can have percents in them.
+      //$http.get(encodeURI(url), httpConfig).
+      //  success(function(json) {
+      //    if( $scope) {
+      //      if( name)
+      //        $scope[name] = json;
+      //      $scope.loading = false;
+      //    }
+      //    console.log('rest.get success json.length: ' + json.length + ', url: ' + url);
+      //
+      //    if( successListener )
+      //      successListener(json)
+      //
+      //    // If the get worked, the service must be up.
+      //    if( status.status != STATUS.UP ) {
+      //      setStatus({
+      //        status:         STATUS.UP,
+      //        reinitializing: false,
+      //        description:    ''
+      //      });
+      //    }
+      //  }).
+      //  error(function(json, statusCode, headers, config) {
+      //    //   0 Server down
+      //    // 400 Bad Request - request is malformed or missing required fields.
+      //    // 401 Unauthorized
+      //    // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
+      //    // 404 Not Found - Server has not found anything matching the Request-URI
+      //    // 408 Request Timeout
+      //    // 500 Internal Server Error
+      //    //
+      //    if( failureListener )
+      //      failureListener(json, statusCode, headers, config)
+      //    if( statusCode === 401 || statusCode === 0 )
+      //      httpRequestError(json, statusCode, headers, config)
+      //  });
     }
 
     function post(url, data, name, $scope, successListener, failureListener) {
@@ -5733,12 +6427,9 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
 
     //var WS = window['MozWebSocket'] ? MozWebSocket : WebSocket
-    var webSocket = null
-    var webSocketPendingTasks = []
-
-    var subscription = {
-      listeners: {}   // { subscriptionId: { message: listener, error: listener}, ...}
-    };
+    var webSocket = null,
+        webSocketPendingTasks = [],
+        subscriptionIdMap = {} // { subscriptionId: { message: listener, error: listener}, ...}
 
     /* Assign these WebSocket handlers to a newly created WebSocket */
     var wsHanders = {
@@ -5793,7 +6484,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
     function getListenerForMessage( message) {
       if( message.subscriptionId)
-        return subscription.listeners[ message.subscriptionId]
+        return subscriptionIdMap[ message.subscriptionId]
       else
         return null
     }
@@ -5823,26 +6514,27 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
     }
 
-    function saveSubscriptionOnScope( $scope, subscriptionId) {
-      if( ! $scope.__subscriptionIds)
-        $scope.__subscriptionIds = []
-      $scope.__subscriptionIds.push( subscriptionId)
+    function saveSubscriptionOnScope( scope, subscriptionId) {
+      if( ! scope.__subscriptionIds)
+        scope.__subscriptionIds = []
+      scope.__subscriptionIds.push( subscriptionId)
     }
 
-    function registerSubscriptionOnScope( $scope, subscriptionId) {
+    function registerSubscriptionOnScope( scope, subscriptionId) {
 
-      saveSubscriptionOnScope( $scope, subscriptionId);
+      saveSubscriptionOnScope( scope, subscriptionId);
 
       // Register for controller.$destroy event and kill any retry tasks.
-      // TODO save return value as unregister function. Could have multiples on one $scope.
-      $scope.$on( '$destroy', function( event) {
-        if( $scope.__subscriptionIds) {
-          console.log( 'subscription $destroy ' + $scope.__subscriptionIds.length);
-          $scope.__subscriptionIds.forEach( function( subscriptionId) {
+      // TODO save return value as unregister function. Could have multiples on one scope.
+      scope.$on( '$destroy', function( event) {
+        if( scope.__subscriptionIds) {
+          console.log( 'subscription $destroy ' + scope.__subscriptionIds.length);
+          scope.__subscriptionIds.forEach( function( subscriptionId) {
             unsubscribe( subscriptionId)
-            delete subscription.listeners[ subscriptionId]
+            if( subscriptionIdMap.hasOwnProperty( subscriptionId))
+              delete subscriptionIdMap[ subscriptionId];
           })
-          $scope.__subscriptionIds = []
+          scope.__subscriptionIds = []
         }
       });
 
@@ -5851,8 +6543,8 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
     function removeAllSubscriptions( error) {
       // save in temp in case a listener.error() tries to resubscribe
       var subscriptionId, listener,
-        temp = subscription.listeners
-      subscription.listeners = {}
+          temp = subscriptionIdMap
+      subscriptionIdMap = {}
       webSocketPendingTasks = []
       for( subscriptionId in temp) {
         listener = temp[subscriptionId]
@@ -5872,21 +6564,22 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
     }
 
     function makeSubscriptionId( json) {
-      var messageKey = Object.keys( json)[0]
+      //var messageKey = Object.keys( json)[0]
       // add the messageKey just for easier debugging.
-      return 'subscription.' + messageKey + '.' + generateUUID();
+      return 'subscription.' + json.name + '.' + generateUUID();
     }
 
     function addSubscriptionIdToMessage( json) {
       var subscriptionId = makeSubscriptionId( json)
-      var messageKey = Object.keys( json)[0]
-      json[messageKey].subscriptionId = subscriptionId
+      json.subscriptionId = subscriptionId
+      json.authToken = authentication.getAuthToken()
       return subscriptionId
     }
 
     function makeWebSocket() {
       var wsUri = $location.protocol() === 'https' ? 'wss' : 'ws'
       wsUri += '://' + $location.host() + ':' + $location.port()
+      // Note: The WebSocket API doesn't have a way to add headers like 'Authorization', so we put in on the URL
       wsUri += '/websocket?authToken=' + authentication.getAuthToken()
       var ws = websocketFactory( wsUri)
       if( ws) {
@@ -5898,16 +6591,16 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
       return ws
     }
 
-    function pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener) {
+    function pushPendingSubscription( subscriptionId, scope, request, messageListener, errorListener) {
       // We're good, so save request to wait for WebSocket.onopen().
       console.log( 'subscribe: send pending ( ' + request + ')')
       webSocketPendingTasks.push( request)
-      registerSubscriptionOnScope( $scope, subscriptionId);
-      subscription.listeners[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
+      registerSubscriptionOnScope( scope, subscriptionId);
+      subscriptionIdMap[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
     }
 
 
-    function subscribe( json, $scope, messageListener, errorListener) {
+    function subscribe( json, scope, messageListener, errorListener) {
 
       var subscriptionId = addSubscriptionIdToMessage( json)
       var request = JSON.stringify( json)
@@ -5920,8 +6613,8 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
           // We're good, so save request for WebSocket.onmessage()
           console.log( 'subscribe: send( ' + request + ')')
-          registerSubscriptionOnScope( $scope, subscriptionId);
-          subscription.listeners[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
+          registerSubscriptionOnScope( scope, subscriptionId);
+          subscriptionIdMap[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
         } catch( ex) {
           if( errorListener)
             errorListener( 'Could not send subscribe request to server. Exception: ' + ex)
@@ -5940,7 +6633,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
             if( ! webSocket)
               throw 'WebSocket create failed.'
 
-            pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener)
+            pushPendingSubscription( subscriptionId, scope, request, messageListener, errorListener)
 
           } catch( ex) {
             var description = 'Unable to open WebSocket connection to server. Exception: ' + ex
@@ -5954,7 +6647,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
         } else {
           // Already opening WebSocket, STATUS.OPENING. Just push pending.
-          pushPendingSubscription( subscriptionId, $scope, request, messageListener, errorListener)
+          pushPendingSubscription( subscriptionId, scope, request, messageListener, errorListener)
         }
 
       }
@@ -5965,10 +6658,14 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
     function unsubscribe( subscriptionId) {
       if( webSocket)
         webSocket.send(JSON.stringify(
-          { unsubscribe: subscriptionId}
+          {
+            name: 'Unsubscribe',
+            authToken: authentication.getAuthToken(),
+            subscriptionId: subscriptionId
+          }
         ))
-      if( subscription.hasOwnProperty( subscriptionId))
-        delete subscription[ subscriptionId]
+      if( subscriptionIdMap.hasOwnProperty( subscriptionId))
+        delete subscriptionIdMap[ subscriptionId]
     }
 
 
@@ -6075,6 +6772,25 @@ angular.module("greenbus.views.template/endpoint/endpoints.html", []).run(["$tem
     "    </div>\n" +
     "</div>\n" +
     "\n" +
+    "");
+}]);
+
+angular.module("greenbus.views.template/equipment/equipment.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/equipment/equipment.html",
+    "<div class=\"gb-equipment\">\n" +
+    "    <h3>{{ name }}</h3>\n" +
+    "    <tabset>\n" +
+    "        <tab heading=\"Measurements\" ng-if=\"tabs.measurements\">\n" +
+    "            <gb-measurements points-promise=\"pointsPromise\"></gb-measurements>\n" +
+    "        </tab>\n" +
+    "        <tab heading=\"Properties\" ng-if=\"tabs.properties\">\n" +
+    "            <gb-properties-table></gb-properties-table>\n" +
+    "        </tab>\n" +
+    "        <tab heading=\"Points\" ng-if=\"tabs.points\">\n" +
+    "            <gb-points-table points-promise=\"pointsPromise\"></gb-points-table>\n" +
+    "        </tab>\n" +
+    "    </tabset>\n" +
+    "</div>\n" +
     "");
 }]);
 
@@ -6322,10 +7038,7 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
   $templateCache.put("greenbus.views.template/measurement/measurements.html",
     "<div>\n" +
     "    <div class=\"row\">\n" +
-    "        <div class=\"col-md-5\">\n" +
-    "            <h3>Measurements</h3>\n" +
-    "        </div>\n" +
-    "        <div class=\"col-md-7\" style=\"margin-top: 1.2em;\">\n" +
+    "        <div class=\"col-md-6 col-md-offset-3\" style=\"margin-top: 1.2em;\">\n" +
     "            <input type=\"text\"  class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
     "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
     "        </div>\n" +
@@ -6509,20 +7222,20 @@ angular.module("greenbus.views.template/navigation/navBarTop.html", []).run(["$t
     "            <span class=\"icon-bar\"></span>\n" +
     "            <span class=\"icon-bar\"></span>\n" +
     "        </button>\n" +
-    "        <a class=\"navbar-brand\" href=\"{{ application.route }}\">{{ application.label }}</a>\n" +
+    "        <a class=\"navbar-brand\" href=\"{{ application.url }}\">{{ application.label }}</a>\n" +
     "    </div>\n" +
     "\n" +
     "    <div class=\"collapse navbar-collapse\" collapse=\"isCollapsed\">\n" +
     "        <ul class=\"nav navbar-nav\" ng-hide=\"loading\">\n" +
     "            <li  ng-repeat=\"item in applicationMenuItems\" ng-class=\"getActiveClass( item)\">\n" +
-    "                <a href=\"{{ item.route }}\">{{ item.label }}</a>\n" +
+    "                <a href=\"{{ item.url }}\">{{ item.label }}</a>\n" +
     "            </li>\n" +
     "        </ul>\n" +
     "        <ul class=\"nav navbar-nav navbar-right\" ng-hide=\"loading\">\n" +
     "            <li class=\"dropdown\" dropdown>\n" +
     "                <a class=\"dropdown-toggle\" dropdown-toggle href>Logged in as {{ userName }} <b class=\"caret\"></b></a>\n" +
     "                <ul class=\"dropdown-menu\">\n" +
-    "                    <li ng-repeat=\"item in sessionMenuItems\"><a href=\"{{ item.route }}\">{{ item.label }}</a></li>\n" +
+    "                    <li ng-repeat=\"item in sessionMenuItems\"><a href=\"{{ item.url }}\">{{ item.label }}</a></li>\n" +
     "                </ul>\n" +
     "            </li>\n" +
     "        </ul>\n" +
@@ -6536,7 +7249,7 @@ angular.module("greenbus.views.template/navigation/navList.html", []).run(["$tem
   $templateCache.put("greenbus.views.template/navigation/navList.html",
     "<ul class=\"nav nav-list\">\n" +
     "    <li ng-repeat=\"item in navItems\" ng-class=\"getClass(item)\" ng-switch=\"item.type\">\n" +
-    "        <a ng-switch-when=\"item\" href=\"{{ item.route }}\">{{ item.label }}</a>\n" +
+    "        <a ng-switch-when=\"item\" href=\"{{ item.url }}\">{{ item.label }}</a>\n" +
     "        <span ng-switch-when=\"header\">{{ item.label }}</span>\n" +
     "    </li>\n" +
     "</ul>");
@@ -6547,6 +7260,55 @@ angular.module("greenbus.views.template/notification/notification.html", []).run
     "<div class=\"gb-notification-container\">\n" +
     "    <div class=\"gb-notification-message\" ng-repeat=\"notification in notifications\">{{ notification }}</div>\n" +
     "</div>");
+}]);
+
+angular.module("greenbus.views.template/point/pointsTable.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/point/pointsTable.html",
+    "<div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "    <table class=\"table table-condensed\">\n" +
+    "        <thead>\n" +
+    "        <tr>\n" +
+    "            <th>Name</th>\n" +
+    "            <th>Class</th>\n" +
+    "            <th>Unit</th>\n" +
+    "            <th>Types</th>\n" +
+    "        </tr>\n" +
+    "        </thead>\n" +
+    "        <tbody>\n" +
+    "        <tr class=\"gb-point\" ng-repeat=\"point in points\">\n" +
+    "            <td>{{point.name}}</td>\n" +
+    "            <td><img class=\"gb-icon\" ng-src=\"{{ point.pointType | pointTypeImage: point.unit }}\" width=\"14px\" height=\"14px\" title=\"{{ point.pointType | pointTypeText: point.unit }}\"/>\n" +
+    "                {{point.pointType}}\n" +
+    "            </td>\n" +
+    "            <td>{{ point.unit }}</td>\n" +
+    "            <td>{{ point.types.join(', ') }}</td>\n" +
+    "        </tr>\n" +
+    "        </tbody>\n" +
+    "    </table>\n" +
+    "</div>\n" +
+    "");
+}]);
+
+angular.module("greenbus.views.template/property/propertiesTable.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/property/propertiesTable.html",
+    "<div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "    <table class=\"table table-condensed\">\n" +
+    "        <thead>\n" +
+    "        <tr>\n" +
+    "            <th>Property</th>\n" +
+    "            <th>Value</th>\n" +
+    "        </tr>\n" +
+    "        </thead>\n" +
+    "        <tbody>\n" +
+    "        <tr class=\"gb-property\" ng-repeat=\"property in properties\" ng-switch on=\"property.isObject\">\n" +
+    "            <td>{{property.key}}</td>\n" +
+    "            <td ng-switch-when=\"true\"><pre>{{property.value | json}}</pre></td>\n" +
+    "            <td ng-switch-default>{{property.value}}</td>\n" +
+    "        </tr>\n" +
+    "        </tbody>\n" +
+    "    </table>\n" +
+    "</div>\n" +
+    "");
 }]);
 
 angular.module("greenbus.views.template/selection/selectAll.html", []).run(["$templateCache", function($templateCache) {

@@ -73,48 +73,45 @@ define([
 
     // Declare app level module which depends on filters, and services
     var app = angular.module('ReefAdmin', [
-            'ngRoute',
-            'ngAnimate',
-            'angularBootstrapNavTree',
-            'greenbus.views',
-            'controllers'
-//            'ReefAdmin.services',
-//            'ReefAdmin.filters',
-//            'ReefAdmin.directives',
-//            'authentication.service',
-//            'controllers',
-//            'chartController',
-//            'coral.event',
-//            'coral.navigation',
-//            'coral.meas',
-//            'coral.request',
-//            'coral.chart'
-        ]).
-      config(['$routeProvider', function($routeProvider) {
-        $routeProvider.
-          when('/view1', {templateUrl: '/partials/view1.html', controller: 'View1Control'}).
-          when('/logout', {templateUrl: '/partials/login.html', controller: 'LogoutController'}).
-          when('/measurements', {templateUrl: '/partials/measurements.html'}).
-          when('/measurements/:navId', {templateUrl: '/partials/measurements.html'}).
-          when('/events', {templateUrl: '/partials/events.html'}).
-          when('/alarms', {templateUrl: '/partials/alarms.html'}).
-          when('/endpoints', {templateUrl: '/partials/endpoints.html'}).
-          when('/esses/:id', {templateUrl: '/partials/esses.html'}).
-//          when('/chart', {templateUrl: '/partials/chart.html', controller: 'ChartControl'}).
-//          when('/entities', {templateUrl: '/partials/entities.html', controller: 'EntityControl'}).
-//          when('/entities/:id/:name', {templateUrl: '/partials/entitydetail.html', controller: 'EntityDetailControl'}).
-//          when('/points', {templateUrl: '/partials/points.html', controller: 'PointControl'}).
-//          when('/points/:id/:name', {templateUrl: '/partials/pointdetail.html', controller: 'PointDetailControl'}).
-//          when('/pointsfornav/:navId', {templateUrl: '/partials/points.html', controller: 'PointsForNavControl'}).
-//          when('/commands', {templateUrl: '/partials/commands.html', controller: 'CommandControl'}).
-//          when('/commands/:name', {templateUrl: '/partials/commanddetail.html', controller: 'CommandDetailControl'}).
-//          when('/applications', {templateUrl: '/partials/applications.html', controller: 'ApplicationControl'}).
-//          when('/applications/:name', {templateUrl: '/partials/applicationdetail.html', controller: 'ApplicationDetailControl'}).
-//          when('/agents', {templateUrl: '/partials/agents.html', controller: 'AgentControl'}).
-//          when('/agents/:name', {templateUrl: '/partials/agentdetail.html', controller: 'AgentDetailControl'}).
-//          when('/permissionsets', {templateUrl: '/partials/permissionsets.html', controller: 'PermissionSetControl'}).
-//          when('/permissionsets/:name', {templateUrl: '/partials/permissionsetdetail.html', controller: 'PermissionSetDetailControl'}).
-          otherwise({redirectTo: '/measurements'});
+        'ui.router',
+        'ngAnimate',
+        'angularBootstrapNavTree',
+        'greenbus.views',
+        'controllers'
+      ]).
+      config([ '$stateProvider', '$urlRouterProvider', function($stateProvider, $urlRouterProvider) {
+
+        // For any unmatched url, redirect to ...
+        $urlRouterProvider.otherwise("/loading")
+
+        $stateProvider
+          .state('loading',                   { url: "/loading",     template: "<div>loading...</div>"})
+          .state('microgrids',                { url: "/microgrids/:microgridId", params: {navigationElement: null}, template: "<div ui-view></div>"})
+          .state('microgrids.dashboard',      { url: "/dashboard",       params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.equipments',     { url: "/equipments",      params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.equipmentsId',   { url: "/equipments/:id",  params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.pvs',            { url: "/pvs",             params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.pvsId',          { url: "/pvs/:id",         params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.esses',          { url: "/esses",           params: {navigationElement: null}, template: "<gb-esses></gb-esses>"})
+          .state('microgrids.essesId',        { url: "/esses/:id",       params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.generations',    { url: "/generations",     params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.generationsId',  { url: "/generations/:id", params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.loads',          { url: "/loads",           params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('microgrids.loadsId',        { url: "/loads/:id",       params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
+          .state('endpoints',                 { url: "/endpoints",       params: {navigationElement: null}, template: "<gb-endpoints></gb-endpoints>"})
+          .state('events',                    { url: "/events",          params: {navigationElement: null}, template: "<gb-events></gb-events>"})
+          .state('alarms',                    { url: "/alarms",          params: {navigationElement: null}, template: "<gb-alarms></gb-alarms>"})
+
+        //$routeProvider.
+        //  when('/view1', {templateUrl: '/partials/view1.html', controller: 'View1Control'}).
+        //  when('/logout', {templateUrl: '/partials/login.html', controller: 'LogoutController'}).
+        //  when('/measurements', {templateUrl: '/partials/measurements.html'}).
+        //  when('/measurements/:navId', {templateUrl: '/partials/measurements.html'}).
+        //  when('/events', {templateUrl: '/partials/events.html'}).
+        //  when('/alarms', {templateUrl: '/partials/alarms.html'}).
+        //  when('/endpoints', {templateUrl: '/partials/endpoints.html'}).
+        //  when('/esses/:id', {templateUrl: '/partials/esses.html'}).
+        //  otherwise({redirectTo: '/measurements'});
       }]);
 
     $(document).ready(function () {

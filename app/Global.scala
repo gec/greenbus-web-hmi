@@ -62,6 +62,10 @@ object Global extends GlobalSettings {
     Logger.info( "Starting reef connection manager " + reefConnectionManager)
     Application.reefConnectionManager = reefConnectionManager
     Application.reefServiceFactory = ReefServiceFactoryDefault
+    Application.myWebSocketServiceProviders = Seq(
+      io.greenbus.web.websocket.SubscriptionServicesActor.webSocketServiceProvider( ReefServiceFactoryDefault)
+    )
+
     Logger.info( "Application started")
 
     /*

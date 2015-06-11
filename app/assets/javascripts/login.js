@@ -33,14 +33,17 @@ define([
     'use strict';
 
     var app = angular.module('ReefAdmin', [
-            'ngRoute',
-            'greenbus.views.authentication'
-        ])
-        .config(['$routeProvider', function($routeProvider) {
-            $routeProvider.
-                when('/login', {templateUrl: 'partials/login.html', controller: 'LoginController'}).
-                otherwise({redirectTo: '/login'});
-        }]);
+        'ui.router',
+        'greenbus.views.authentication'
+    ]).
+    config(['$stateProvider', '$urlRouterProvider', function($stateProvider, $urlRouterProvider) {
+
+        // For any unmatched url, redirect to ...
+        $urlRouterProvider.otherwise("/microgrids")
+
+        $stateProvider
+          .state('login', {url: '/login', templateUrl: 'partials/login.html', controller: 'LoginController'})
+    }]);
 
     // No ng-app in index page. Bootstrap manually after RequireJS has dependencies loaded.
     angular.bootstrap(document, ['ReefAdmin'])

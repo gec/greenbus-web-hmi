@@ -28,15 +28,18 @@ define([
 
 
     // Declare app level module which depends on filters, and services
-    var app = angular.module('ReefAdmin', [
-            'ngRoute',
-            'ngAnimate',
-            'greenbus.views'
-        ]).
-      config(['$routeProvider', function($routeProvider) {
-        $routeProvider.
-          when('/', {templateUrl: '/partials/chart-popout.html'}).
-          otherwise({redirectTo: '/'});
+    var app = angular.module('greenbus-chart-popout', [
+        'ui.router',
+        'ngAnimate',
+        'greenbus.views'
+      ]).
+      config([ '$stateProvider', '$urlRouterProvider', function($stateProvider, $urlRouterProvider) {
+
+        // For any unmatched url, redirect to ...
+        $urlRouterProvider.otherwise("/")
+
+        $stateProvider
+          .state('chartpopout', { url: "/", template: '<gb-chart></gb-chart>'})
       }]);
 
     $(document).ready(function () {
