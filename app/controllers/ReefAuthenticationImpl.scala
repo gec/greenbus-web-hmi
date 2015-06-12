@@ -39,7 +39,7 @@ trait ReefAuthenticationImpl extends ReefAuthentication {
     Ok( views.html.login( "loginPageContent"))
   }
 
-  def indexPageContent( request: RequestHeader): Result = Ok( views.html.index( "indexPageContent"))
+  def indexPageContent( request: RequestHeader): Result = Ok( views.html.operator( "some message"))
 
   def redirectToLogin(request: RequestHeader, failure: AuthenticationFailure): Result =
     Redirect( routes.Application.getLoginOrAlreadyLoggedIn)

@@ -46,27 +46,6 @@ require.config({
 });
 
 define([
-  'controllers'
-//    'angular',
-//    'angular-route',
-//    'angular-animate',
-//    'd3',
-//    'abn-tree',
-//    'filters',
-//    'authentication/service',
-//    'authentication/interceptor',
-//    'controllers',
-//    'measurementController',
-//    'chartController',
-//    'directives',
-//    'services',
-//    'coral/eventService',
-//    'coral/navigation',
-//    'coral/measService',
-//    'coral/requestService',
-//    'coral/chartService',
-//    'coral/chartsController'
-
 ], function( /*angular*/) {
 'use strict';
 
@@ -76,8 +55,7 @@ define([
         'ui.router',
         'ngAnimate',
         'angularBootstrapNavTree',
-        'greenbus.views',
-        'controllers'
+        'greenbus.views'
       ]).
       config([ '$stateProvider', '$urlRouterProvider', function($stateProvider, $urlRouterProvider) {
 
