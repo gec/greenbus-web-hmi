@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-06-11
+ * Version: 0.1.0-SNAPSHOT - 2015-06-18
  * License: Apache Version 2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
@@ -5434,7 +5434,7 @@ angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.
       var restStatus = rest.getStatus(),
           subscriptionStatus = subscription.getStatus(),
           greenbusStatus = {
-            status: 'UP', // let's assume UP until we hear otherwise.
+            status: 'AMQP_UP', // let's assume AMQP_UP until we hear otherwise.
             reinitializing: false,
             description: ''
           }
@@ -5447,7 +5447,7 @@ angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.
           $scope.notifications.push( restStatus.description)
         if( subscriptionStatus.status !== subscription.STATUS.UP && subscriptionStatus.status !== subscription.STATUS.UNOPENED)
           $scope.notifications.push( subscriptionStatus.description)
-        if( greenbusStatus.status !== 'UP')
+        if( greenbusStatus.status !== 'AMQP_UP')
           $scope.notifications.push( greenbusStatus.description)
       }
 
@@ -6437,17 +6437,24 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
       onmessage: function (event) {
         var message = JSON.parse(event.data)
 
-        if( message.type === 'ConnectionStatus') {
-          console.debug( 'onMessage.ConnectionStatus ' + message.data)
-          handleGreenBusConnectionStatus( message.data)
-          return
+        switch( message.type) {
+          case 'ConnectionStatus':
+            console.debug( 'onMessage.ConnectionStatus ' + message.data)
+            handleGreenBusConnectionStatus( message.data)
+            break;
+          case 'ExceptionMessage':
+            console.error( 'ExceptionMessage: ' + JSON.stringify( message.data))
+            break;
+          case 'SubscriptionExceptionMessage':
+            console.error( 'SubscriptionExceptionMessage: ' + JSON.stringify( message.data))
+            break;
+
+          default:
+            // console.debug( 'onMessage message.subscriptionId=' + message.subscriptionId + ', message.type=' + message.type)
+            var listener = getListenerForMessage( message)
+            if( listener)
+              handleMessageWithListener( message, listener)
         }
-
-        // console.debug( 'onMessage message.subscriptionId=' + message.subscriptionId + ', message.type=' + message.type)
-
-        var listener = getListenerForMessage( message)
-        if( listener)
-          handleMessageWithListener( message, listener)
       },
       onopen: function(event) {
         console.log( 'webSocket.onopen event: ' + event)
