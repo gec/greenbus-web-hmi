@@ -79,6 +79,7 @@ define([
           .state('endpoints',                 { url: "/endpoints",       params: {navigationElement: null}, template: "<gb-endpoints></gb-endpoints>"})
           .state('events',                    { url: "/events",          params: {navigationElement: null}, template: "<gb-events></gb-events>"})
           .state('alarms',                    { url: "/alarms",          params: {navigationElement: null}, template: "<gb-alarms></gb-alarms>"})
+          .state('logout',                    { url: "/logout",          params: {navigationElement: null}, template: "<div>Logging out...</div>", controller: 'LogoutController'})
 
         //$routeProvider.
         //  when('/view1', {templateUrl: '/partials/view1.html', controller: 'View1Control'}).
