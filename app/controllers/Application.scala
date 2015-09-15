@@ -58,4 +58,15 @@ object Application extends Controller with ReefAuthenticationImpl with RestServi
     Ok(views.html.chartPopout("GreenBus HMI Chart"))
   }
 
+  /**
+   * We're adding the CORS header via Global WithFilters(CorsFilter)
+   * Allow CORS - Cross Origin Resource Sharing
+   * See example:
+   *   https://gist.github.com/mitchwongho/78cf2ae0276847c9d332
+   *   https://windrush.org/blog/cors-and-play
+   */
+  def preflight(path: String) = Action {
+    Ok("")
+  }
+
 }

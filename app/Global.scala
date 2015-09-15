@@ -25,12 +25,17 @@ import io.greenbus.web.websocket.{WebSocketPushActor, WebSocketConsumerImpl}
 import play.api._
 import controllers.Application
 import play.api.Application
+import play.api.http.HeaderNames
 import play.api.libs.concurrent.Akka
 import play.api.libs.iteratee.Concurrent
 import play.api.libs.json.JsValue
 import play.api.Play.current
 import akka.actor.{Props, ActorContext}
 import play.api.db.slick
+import play.api.mvc.{WithFilters, Result, RequestHeader, Filter}
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 
 object ClientPushActorFactory extends WebSocketPushActorFactory{
@@ -47,10 +52,30 @@ object ClientPushActorFactory extends WebSocketPushActorFactory{
 }
 
 /**
+ * Allow CORS - Cross Origin Resource Sharing
+ * See example: https://gist.github.com/mitchwongho/78cf2ae0276847c9d332
+ */
+object CorsFilter extends Filter {
+
+  def apply (nextFilter: (RequestHeader) => Future[Result])(requestHeader: RequestHeader): Future[Result] = {
+
+    nextFilter(requestHeader).map { result =>
+      result.withHeaders(
+        HeaderNames.ALLOW -> "*",
+        HeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN -> "*",
+        HeaderNames.ACCESS_CONTROL_ALLOW_METHODS -> "POST, GET, PUT, DELETE, OPTIONS",
+        HeaderNames.ACCESS_CONTROL_ALLOW_HEADERS -> "Origin, X-Requested-With, Content-Type, Accept, Referer, User-Agent, Authorization, withcredentials",
+        HeaderNames.ACCESS_CONTROL_ALLOW_CREDENTIALS -> "true"
+      )
+    }
+  }
+}
+
+/**
  *
  * @author Flint O'Brien
  */
-object Global extends GlobalSettings {
+object Global extends WithFilters(CorsFilter) with GlobalSettings {
   import ReefConnectionManager.ReefConnectionManagerServiceFactorySingleton
 
   lazy val reefConnectionManager = Akka.system.actorOf(Props( new ReefConnectionManager( ReefConnectionManagerServiceFactorySingleton, ClientPushActorFactory)), "ReefConnectionManager")
