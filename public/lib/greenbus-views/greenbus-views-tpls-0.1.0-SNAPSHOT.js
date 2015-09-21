@@ -2,11 +2,73 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-06-18
- * License: Apache Version 2.0
+ * Version: 0.1.0-SNAPSHOT - 2015-09-21
+ * License: Apache-2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.selection","greenbus.views.subscription"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
 angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/selection/selectAll.html"]);
+/**
+* Copyright 2013-2014 Green Energy Corp.
+*
+* Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+* contributor license agreements. See the NOTICE file distributed with this
+* work for additional information regarding copyright ownership. Green Energy
+* Corp licenses this file to you under the Apache License, Version 2.0 (the
+* "License"); you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+* http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+* WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+* License for the specific language governing permissions and limitations under
+* the License.
+*
+* Author: Flint O'Brien
+*/
+
+angular.module('greenbus.views.assert', []).
+
+  factory('assert', [ function(){
+
+    var exports = {}  // public API
+
+
+    exports.stringNotEmpty = function( s, message) {
+      if( typeof s !== 'string' || s === '' || s === undefined || s === null) {
+        message = message === undefined ? 'Value ' : message + ' '
+        var messageFull = message + JSON.stringify( s) + ' is empty or undefined or not a string'
+        console.error( messageFull)
+        throw messageFull
+      }
+    }
+
+    exports.stringEmpty = function( s, message) {
+      if( typeof s !== 'string' || s !== '') {
+        message =  message === undefined ? 'Value ' : message + ' '
+        var messageFull = message + JSON.stringify( s) + ' is not empty or undefined or not a string'
+        console.error( messageFull)
+        throw messageFull
+      }
+    }
+
+    exports.equals = function( a, b, message) {
+      if( a !== b) {
+        message =  message === undefined ? 'Value ' : message + ' '
+        var messageFull = message + JSON.stringify( a) + ' is not equal to ' + JSON.stringify( a)
+        console.error( messageFull)
+        throw messageFull
+      }
+    }
+
+    /**
+     * Public API
+     */
+    return exports
+
+  }]);
+
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -367,6 +429,13 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
             time: 1000 * 60 * 60 * 2, // 2 hours
             size: 60 * 60 * 2 * 10, // 2 hours of 10 measurements per second data
             throttling: 5000
+          },
+          trend = {
+            track:  'current-time',
+            domain: {
+              interval: d3.time.hour,
+              count: 2
+            }
           }
 
       $scope.charts = []
@@ -457,7 +526,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       $scope.$on( REQUEST_ADD_CHART, function() {
         var points = request.pop( REQUEST_ADD_CHART);
         while( points) {
-          var chart = new GBChart( points),
+          var chart = new GBChart( points, trend),
               i = chart.points.length
           $scope.charts.push( chart )
           while( --i >= 0) {
@@ -488,6 +557,13 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
           time: 1000 * 60 * 60 * 4, // 4 hours
           size: 60 * 60 * 4 * 10, // 4 hours of 10 measurements per second data
           throttling: 5000
+        },
+        trend = {
+          track:  'current-time',
+          domain: {
+            interval: d3.time.hour,
+            count: 4
+          }
         }
 
 
@@ -495,7 +571,7 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
     $window.document.body.scroll = 'no'; // ie only
 
     $scope.loading = true
-    $scope.chart = new GBChart( [], true)  // t: zoomSlider
+    $scope.chart = new GBChart( [], trend, true)  // t: zoomSlider
     console.log( 'gbChartController query params: ' + pointIds)
 
     if( pointIds.length > 0) {
@@ -880,10 +956,11 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
  * @param _points  Array of points
  * @param _brushChart Boolean True if brush chart should be created
  */
-function GBChart( _points, _brushChart) {
+function GBChart( _points, trend, _brushChart) {
 
   var self = this
   self.points = copyPoints( _points)
+  self.trend = angular.copy( trend) // deep copy
   self.unitMap = getChartUnits( self.points )
   self.name = makeNameFromPoints( self.points )
   self.traits = makeChartTraits( self.unitMap )
@@ -951,17 +1028,9 @@ function GBChart( _points, _brushChart) {
   }
 
   function makeChartConfigScaleX1() {
-    var intervalCount = self.brushChart ? 4 : 2
-    return {
-      axis: 'x1',
-      trend: {
-        track:  'current-time',
-        domain: {
-          interval: d3.time.hour,
-          count: intervalCount
-        }
-      }
-    }
+    // If we have a brush chart, then we'll be manually controlled by brush.
+    return self.brushChart ? { axis: 'x1', domain: 'manual' }
+      : { axis: 'x1', trend: self.trend }
   }
 
   function makeChartTraits( unitMap, size ) {
@@ -984,8 +1053,7 @@ function GBChart( _points, _brushChart) {
 
       if( unit === 'raw' || unit === 'status' || unit === '') {
         interpolate = 'step-after'
-        scaleConfig.domainMin = 0
-        scaleConfig.domainMax = 5
+        scaleConfig.domain = [0, 5]
       } else {
         scaleConfig.domainPadding = 0.05
       }
@@ -1026,7 +1094,7 @@ function GBChart( _points, _brushChart) {
 
 
     brushTraits = d3.trait( d3.trait.chart.base, config )
-      .trait( d3.trait.scale.time, makeChartConfigScaleX1())
+      .trait( d3.trait.scale.time, { axis: 'x1', trend: self.trend})
       .trait( d3.trait.scale.linear, { axis: 'y1' })
       .trait( d3.trait.chart.line, { interpolate: 'step-after' })
       .trait( d3.trait.control.brush, { axis: 'x1', target: self.traits, targetAxis: 'x1'})
@@ -6206,6 +6274,238 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
     $httpProvider.responseInterceptors.push(interceptor);
   }]);
+
+
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * 'License'); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an 'AS IS' BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'greenbus.views.rest', 'greenbus.views.request']).
+
+  /**
+   * Schematic services.
+   *
+   *   controller: schematic.subscribeToSchematic( notify)
+   *   link: scope.$watch('svgContent', )
+   *     insert
+   *     use jQuery to get points
+   *     store points on scope for controller.
+   *     use jQuery to transform to Angular directives
+   *     $compile
+   *   controller: watch points list and subscribe to points
+   */
+  factory('schematic', [ '$stateParams', '$q', 'rest', 'subscription', 'measurement', 'assert', function( $stateParams, $q, rest, subscription, measurement, assert) {
+
+    // public API
+    var exports = {
+      KEY_SCHEMATIC: 'schematic'
+    }
+
+
+    exports.subscribeToSchematic = function( equipmentId, scope, notify) {
+
+      var subscriptionId,
+          json = {
+            name: 'SubscribeToProperties',
+            entityId:  equipmentId,
+            keys: [exports.KEY_SCHEMATIC]
+          }
+
+      subscriptionId = subscription.subscribe( json, scope,
+        function( subscriptionId, type, data) {
+
+          switch( type) {
+            case 'notification.property':
+              assert.equals( data.value.key, exports.KEY_SCHEMATIC, 'schematic.subscribeToSchematic notification.property: ')
+              notify( data.value.value, data.operation)
+              break
+            case 'properties':
+              assert.equals( data[0].key, exports.KEY_SCHEMATIC, 'schematic.subscribeToSchematic properties: ')
+              notify( data[0].value, 'CURRENT')
+              break
+            default:
+              console.error( 'schematic.subscribeToSchematic: unknown type "' + type + '" from subscription notification')
+          }
+          $scope.$digest()
+        },
+        function(error, message) {
+          console.error('gbPropertiesTableController.subscribe ' + error + ', ' + message)
+        }
+      )
+
+      return subscriptionId
+    }
+
+    /**
+     *
+     * @param collapsePointsToArray If true, poinrs will always be returned as a list.
+     * @returns {Promise}
+     */
+    exports.getCurrentPoints = function( collapsePointsToArray) {
+      var navigationElement = $stateParams.navigationElement
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return $q.when( [])
+
+      var equipmentIdsQueryParams = getEquipmentIdsQueryParams( navigationElement),
+          depth = rest.queryParameterFromArrayOrString('depth', '9999')
+
+
+      var delimeter = '?'
+      var url = '/models/1/points'
+
+      if( equipmentIdsQueryParams.length > 0 ) {
+        url += delimeter + equipmentIdsQueryParams
+        delimeter = '&'
+      }
+      if( depth.length > 0 )
+        url += delimeter + depth
+
+      return rest.get(url).then(
+        function( response) {
+          var points = [],
+              data = response.data
+
+          // data is either a array of points or a map of equipmentId -> points[]
+          // If it's an object, convert it to a list of points.
+          if( collapsePointsToArray && angular.isObject(data) ) {
+            for( var equipmentId in data ) {
+              points = points.concat(data[equipmentId])
+            }
+          } else {
+            points = data
+          }
+          return {data: points}
+        },
+        function( error) {
+          return error
+        }
+
+      )
+
+    }
+
+
+    return exports
+
+  }]).
+
+  /**
+   * Controller for a single schematic (like inside the pop-out window).
+   */
+  controller( 'gbSchematicController', ['$scope', '$window', 'measurement', 'rest', 'schematic', function( $scope, $window, measurement, rest, schematic) {
+
+    var  microgridId       = $stateParams.microgridId,
+         navigationElement = $stateParams.navigationElement
+
+
+    $scope.loading = true
+    $scope.schematic = new GBChart( [], trend, true)  // t: zoomSlider
+    console.log( 'gbChartController query params: ' + pointIds)
+
+    if( pointIds.length > 0) {
+      var url = '/models/1/points?' + rest.queryParameterFromArrayOrString( 'pids', pointIds)
+      rest.get( url, 'points', $scope, function( data) {
+        data.forEach( function( point) {
+          $scope.schematic.addPoint( point)
+          subscribeToMeasurementHistory( $scope.schematic, point )
+        })
+        $scope.invalidateWindow()
+      })
+    }
+
+    /**
+     * One of our points was dragged away from us.
+     * @param uuid
+     * @param schematic
+     */
+    $scope.onDragSuccess = function( uuid, schematic) {
+      console.log( 'onDragSuccess schematic=' + schematic.name + ' uuid=' + uuid)
+    }
+
+    $window.addEventListener( 'unload', function( event) {
+    })
+
+    function onMeasurements(measurements) {
+      measurements.forEach(function(pm) {
+        var point = findPoint(pm.point.id)
+        if( point ) {
+          //pm.measurement.value = formatMeasurementValue( pm.measurement.value )
+          point.currentMeasurement = pm.measurement
+        } else {
+          console.error('MeasurementsController.onPointMeasurement could not find point.id = ' + pm.point.id)
+        }
+      })
+      $scope.$digest()
+    }
+
+    function subscribeToMeasurements(pointIds) {
+      measurement.subscribe($scope, pointIds, {}, self, onMeasurements)
+    }
+
+    function getPointsAndSubscribeToMeasurements() {
+
+      var promise = $scope.pointsPromise || equipment.getCurrentPoints( true)
+      promise.then(
+        function( response) {
+          $scope.points = response.data
+          var pointIds = processPointsAndReturnPointIds($scope.points)
+          subscribeToMeasurements(pointIds)
+          getPointsCommands(pointIds)
+          return response // for the then() chain
+        },
+        function( error) {
+          return error
+        }
+      )
+    }
+
+
+
+    subscribeToSchematic()
+
+    //getPointsAndSubscribeToMeasurements()
+
+
+  }]).
+
+  directive('gbEquipmentSchematic', function() {
+    return {
+      restrict: 'E',
+      scope: {
+        equipmentId: '='
+      },
+      link: function (scope, elem, attrs) {
+        //var chartEl = d3.select(elem[0])
+
+        scope.$watch('svgContent', function(neValue) {
+          elem.html(newValue);
+          $compile(elem.contents())(scope);
+        })
+
+      }
+    };
+  })
+
 
 
 /**
