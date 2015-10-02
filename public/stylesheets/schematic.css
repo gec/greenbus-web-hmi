@@ -1,0 +1,60 @@
+svg:not(:root), symbol {
+	overflow: visible;
+}
+.symbol {
+	stroke:white;
+	stroke-width: 2px;
+	background-color:transparent;
+}
+.clickable {
+	cursor:pointer;
+}
+.clickable text {
+	text-decoration:underline;
+}
+.navigation-area {
+	fill-opacity:0;
+	fill:#000000;
+}
+.navigation-area:hover {
+	fill-opacity:0.3;
+	fill:#008080;
+	stroke:gray;
+	stroke-width:2px;
+}
+
+text {
+	font-family:Verdana;
+}
+text.default {
+	fill:white;
+	font-size:12px;
+}
+text.data-label {
+	font-size:11px;
+	fill:#FFFF00;
+}
+text.symbol-label {
+	font-size:11px;
+	font-weight:lighter;
+	fill:#FFFFFF;
+	text-decoration:none !important;
+	color:white;
+	font-family:Verdana;
+}
+p.equipment-label {
+	color:white;
+	font-family:Verdana;
+	font-size:18px;
+	text-align:center;
+	word-wrap:break-word;
+}
+
+/*
+	Don't show the connection vertices. Need to remove the vertices and remove this style.
+*/
+.debug {
+	display:none;
+	stroke-width:1px;
+	fill:none;
+}
