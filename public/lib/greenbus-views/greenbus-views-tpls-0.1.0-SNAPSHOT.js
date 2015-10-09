@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-10-02
+ * Version: 0.1.0-SNAPSHOT - 2015-10-08
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -1547,8 +1547,8 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
     }
   }]).
 
-  controller('gbEquipmentController', ['$scope', '$stateParams', 'equipment',
-    function($scope, $stateParams, equipment) {
+  controller('gbEquipmentController', ['$scope', '$state', '$stateParams', 'equipment',
+    function($scope, $state, $stateParams, equipment) {
       var self = this,
           microgridId       = $stateParams.microgridId,
           navigationElement = $stateParams.navigationElement
@@ -1568,7 +1568,7 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
 
       var onePieceOfEquipment = navigationElement.equipmentChildren.length === 0
       $scope.tabs = {
-        overview: true,
+        overview: $state.is( 'microgrids.dashboard'),
         measurements: true,
         properties: onePieceOfEquipment,
         points: true
@@ -3923,8 +3923,24 @@ angular.module( 'greenbus.views.measurement',
  * @param pointIdToMeasurementHistoryMap - Map of point.id to MeasurementHistory
  * @constructor
  */
-  factory('measurement', ['subscription', 'pointIdToMeasurementHistoryMap', '$filter', function(subscription, pointIdToMeasurementHistoryMap, $filter) {
+  factory('measurement', [ 'rest', 'subscription', 'pointIdToMeasurementHistoryMap', '$filter', '$timeout', function( rest, subscription, pointIdToMeasurementHistoryMap, $filter, $timeout) {
     var number = $filter('number')
+
+    var commandRest = {
+      select:   function(accessMode, commandIds, success, failure) {
+        var arg = {
+          accessMode: accessMode,
+          commandIds: commandIds
+        }
+        return rest.post('/models/1/commandlock', arg, null, null, success, failure)
+      },
+      deselect: function(lockId, success, failure) {
+        return rest.delete('/models/1/commandlock/' + lockId, null, null, success, failure)
+      },
+      execute:  function(commandId, args, success, failure) {
+        return rest.post('/models/1/commands/' + commandId, args, null, null, success, failure)
+      }
+    }
 
     function formatMeasurementValue(value) {
       if( typeof value === 'boolean' || isNaN(value) || !isFinite(value) ) {
@@ -4019,6 +4035,18 @@ angular.module( 'greenbus.views.measurement',
       subscription.unsubscribe(subscriptionId)
     }
 
+    function getCommandsForPoints(pointIds) {
+      return rest.post('/models/1/points/commands', pointIds)
+    }
+
+    function getCommandRest() {
+      return commandRest
+    }
+
+    function getCommandSet( point, commands) {
+      return new CommandSet(point, commands, commandRest, $timeout)
+    }
+
 
     /**
      * Public API
@@ -4027,7 +4055,10 @@ angular.module( 'greenbus.views.measurement',
       subscribeWithHistory:   subscribeWithHistory,
       unsubscribeWithHistory: unsubscribeWithHistory,
       subscribe:              subscribe,
-      unsubscribe:            unsubscribe
+      unsubscribe:            unsubscribe,
+      getCommandsForPoints:   getCommandsForPoints,
+      getCommandRest:         getCommandRest,
+      getCommandSet:          getCommandSet
     }
   }]).
 
@@ -4304,41 +4335,27 @@ angular.module( 'greenbus.views.measurement',
         }
       ]
 
-      var CommandRest = {
-        select:   function(accessMode, commandIds, success, failure) {
-          var arg = {
-            accessMode: accessMode,
-            commandIds: commandIds
-          }
-          rest.post('/models/1/commandlock', arg, null, $scope, success, failure)
-        },
-        deselect: function(lockId, success, failure) {
-          rest.delete('/models/1/commandlock/' + lockId, null, $scope, success, failure)
-        },
-        execute:  function(commandId, args, success, failure) {
-          rest.post('/models/1/commands/' + commandId, args, null, $scope, success, failure)
-        }
-      }
-
       /**
        * UUIDs are 36 characters long. The URL max is 2048
        * @param pointIds
        */
-      function getPointsCommands(pointIds) {
-        var url = '/models/1/points/commands'
-
-        rest.post(url, pointIds, null, $scope, function(data) {
-          var point
-          // data is map of pointId -> commands[]
-          for( var pointId in data ) {
-            point = findPoint(pointId)
-            if( point ) {
-              point.commandSet = new CommandSet(point, data[pointId], CommandRest, $timeout)
-              point.commandTypes = point.commandSet.getCommandTypes().toLowerCase()
-              console.log('commandTypes: ' + point.commandTypes)
+      function getCommandsForPoints(pointIds) {
+        measurement.getCommandsForPoints( pointIds).then(
+          function( response) {
+            var point,
+                data = response.data
+            // data is map of pointId -> commands[]
+            for( var pointId in data ) {
+              point = findPoint(pointId)
+              if( point ) {
+                point.commandSet = measurement.getCommandSet(point, data[pointId])
+                point.commandTypes = point.commandSet.getCommandTypes().toLowerCase()
+                console.log('commandTypes: ' + point.commandTypes)
+              }
             }
+
           }
-        })
+        )
 
       }
 
@@ -4350,7 +4367,7 @@ angular.module( 'greenbus.views.measurement',
             $scope.points = response.data
             var pointIds = processPointsAndReturnPointIds($scope.points)
             subscribeToMeasurements(pointIds)
-            getPointsCommands(pointIds)
+            getCommandsForPoints(pointIds)
             return response // for the then() chain
           },
           function( error) {
@@ -6015,6 +6032,10 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
     }
 
     function get(url, name, $scope, successListener, failureListener) {
+      return getDo(url, name, $scope, successListener, failureListener, $q.defer())
+    }
+    function getDo(url, name, $scope, successListener, failureListener, deferred) {
+
       if( $scope)
         $scope.loading = true;
       //console.log( 'rest.get ' + url + ' retries:' + retries.get);
@@ -6025,7 +6046,8 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
         redirectLocation = $location.url() // save the current url so we can redirect the user back
         console.log('CoralRest.get: saving redirectLocation: ' + redirectLocation)
         authentication.redirectToLoginPage(redirectLocation)
-        return
+        deferred.reject( {data: undefined, status: 'Not logged in. Redirecting to login'})
+        return deferred.promise
       }
 
       // Register for controller.$destroy event and kill any retry tasks.
@@ -6045,12 +6067,15 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
         retries.get++;
         var delay = retries.get < 5 ? 1000 : 10000
 
-        if( $scope)
+        if( $scope) {
           $scope.task = $timeout(function() {
-            self.get(url, name, $scope, successListener, failureListener);
+            self.getDo(url, name, $scope, successListener, failureListener, deferred);
           }, delay);
+          deferred.notify( 'Status is ' + status.status + '. Retrying in ' + (delay / 1000) + ' seconds')
+        } else
+          deferred.reject( {data: undefined, status: status.status})
 
-        return;
+        return deferred.promise;
       }
 
       retries.get = 0;
@@ -6058,7 +6083,6 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       httpConfig.headers = authentication.getHttpHeaders()
 
 
-      var deferred = $q.defer()
       // encodeURI because objects like point names can have percents in them.
       $http.get(encodeURI(url), httpConfig).then(
         function( response) {
@@ -6096,69 +6120,37 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
           //
           if( failureListener )
             failureListener(error.data, error.status, error.headers, error.config)
-          deferred.reject( error)
 
           if( error.status === 401 || error.status === 0 )
             httpRequestError(error.data, error.status, error.headers, error.config)
+
+          deferred.reject( error)
         }
       )
 
       return deferred.promise
 
-
-      // encodeURI because objects like point names can have percents in them.
-      //$http.get(encodeURI(url), httpConfig).
-      //  success(function(json) {
-      //    if( $scope) {
-      //      if( name)
-      //        $scope[name] = json;
-      //      $scope.loading = false;
-      //    }
-      //    console.log('rest.get success json.length: ' + json.length + ', url: ' + url);
-      //
-      //    if( successListener )
-      //      successListener(json)
-      //
-      //    // If the get worked, the service must be up.
-      //    if( status.status != STATUS.UP ) {
-      //      setStatus({
-      //        status:         STATUS.UP,
-      //        reinitializing: false,
-      //        description:    ''
-      //      });
-      //    }
-      //  }).
-      //  error(function(json, statusCode, headers, config) {
-      //    //   0 Server down
-      //    // 400 Bad Request - request is malformed or missing required fields.
-      //    // 401 Unauthorized
-      //    // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
-      //    // 404 Not Found - Server has not found anything matching the Request-URI
-      //    // 408 Request Timeout
-      //    // 500 Internal Server Error
-      //    //
-      //    if( failureListener )
-      //      failureListener(json, statusCode, headers, config)
-      //    if( statusCode === 401 || statusCode === 0 )
-      //      httpRequestError(json, statusCode, headers, config)
-      //  });
     }
 
     function post(url, data, name, $scope, successListener, failureListener) {
+      var deferred = $q.defer()
 
       httpConfig.headers = authentication.getHttpHeaders()
 
       // encodeURI because objects like point names can have percents in them.
-      $http.post(url, data, httpConfig).
-        success(function(json) {
+      $http.post(url, data, httpConfig).then(
+        function( response) {
+          var json = response.data
           if( name && $scope)
             $scope[name] = json;
           console.log('rest.post success json.length: ' + json.length + ', url: ' + url);
 
           if( successListener )
             successListener(json)
-        }).
-        error(function(json, statusCode, headers, config) {
+          deferred.resolve( {data: json})
+        },
+        function( error) {
+          // error.status
           //   0 Server down
           // 400 Bad Request - request is malformed or missing required fields.
           // 401 Unauthorized
@@ -6168,36 +6160,56 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
           // 500 Internal Server Error
           //
           if( failureListener )
-            failureListener(json, statusCode, headers, config)
-          if( statusCode === 401 || statusCode === 0 )
-            httpRequestError(json, statusCode, headers, config)
-        });
+            failureListener(error.data, error.status, error.headers, error.config)
 
+          if( error.status === 401 || error.status === 0 )
+            httpRequestError(error.data, error.status, error.headers, error.config)
+
+          deferred.reject( error)
+        }
+      )
+
+      return deferred.promise
     }
 
     function _delete(url, name, $scope, successListener, failureListener) {
+      var deferred = $q.defer()
 
       httpConfig.headers = authentication.getHttpHeaders()
 
       // encodeURI because objects like point names can have percents in them.
-      $http.delete(url, httpConfig).
-        success(function(json) {
+      $http.delete(url, httpConfig).then(
+        function( response) {
+          var json = response.data
           if( name && $scope)
             $scope[name] = json;
           console.log('rest.delete success json.length: ' + json.length + ', url: ' + url);
 
           if( successListener )
             successListener(json)
-        }).
-        error(function(json, statusCode, headers, config) {
-          // 400: Bad Request - request is malformed or missing required fields.
-          // 403: Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
-          if( statusCode === 400 || statusCode === 403 )
-            failureListener(json, statusCode, headers, config)
+          deferred.resolve( {data: json})
+        },
+        function(error) {
+          // error.status
+          //   0 Server down
+          // 400 Bad Request - request is malformed or missing required fields.
+          // 401 Unauthorized
+          // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
+          // 404 Not Found - Server has not found anything matching the Request-URI
+          // 408 Request Timeout
+          // 500 Internal Server Error
+          //
+          if( error.status === 400 || error.status === 403 )
+            failureListener(error.data, error.status, error.headers, error.config)
           else
             httpRequestError(json, statusCode, headers, config)
-        });
 
+          deferred.reject( error)
+        }
+
+      )
+
+      return deferred.promise
     }
 
 
@@ -6351,8 +6363,12 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
               notify( subscriptionId, data.value.value, data.operation)
               break
             case 'properties':
-              assert.equals( data[0].key, exports.KEY_SCHEMATIC, 'schematic.subscribe properties: ')
-              notify( subscriptionId, data[0].value, 'CURRENT')
+              if( data.length > 0) {
+                assert.equals( data[0].key, exports.KEY_SCHEMATIC, 'schematic.subscribe properties: ')
+                notify( subscriptionId, data[0].value, 'CURRENT')
+              } else {
+                console.log( 'schematic.subscribe to schematic - no schematic property')
+              }
               break
             default:
               console.error( 'schematic.subscribe: unknown type "' + type + '" from subscription notification')
@@ -6416,7 +6432,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       var measurementPointNames, equipmentPointNames, pointNames, t
       // Convert jQuery object to array of strings.
       measurementPointNames  = symbols.measurements.map( exports.transformMeasurementAndReturnPointName).get()
-      equipmentPointNames  = symbols.equipment.map( exports.transformEquipmentAndReturnName).get()
+      equipmentPointNames  = symbols.equipment.map( exports.transformEquipmentAndReturnPointName).get()
 
       pointNames = measurementPointNames.concat( equipmentPointNames).unique()
 
@@ -6425,7 +6441,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
 
     /**
      *
-     *  <g tgs\\:schematic-type="point" name="LV.Line.kW_tot" tgs:point-name="LV.Line.kW_tot" id="LV.Line.kW_tot">
+     *  <g tgs:schematic-type="point" name="LV.Line.kW_tot" tgs:point-name="LV.Line.kW_tot" id="LV.Line.kW_tot">
      *    <use class="quality-display" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#quality_invalid" y="78" x="257" id="svg_550"></use>
      *    <text class="data-label" x="277" y="92" id="svg_551">48 kW</text>
      *  </g>
@@ -6441,23 +6457,38 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       text.html( '{{ pointNameMap[\'' + pointName + '\'].currentMeasurement.value }} {{ pointNameMap[\'' + pointName + '\'].unit }}')
       useQuality.attr( 'xlink:href', '{{ pointNameMap[\'' + pointName + '\'].currentMeasurement.validity | schematicValidityDef }} ')
 
+      element.attr( 'ng-click', 'equipmentClicked( pointNameMap[\'' + pointName + '\'])')
+
       return pointName
     }
 
     /**
      *
-     *  <svg tgs\\:schematic-type="equipment-symbol"  symbol-type=“circuitbreaker" tgs:point-name="LV.CB_Main.Status"  class="symbol"  preserveAspectRatio=“xMaxYMax" id="svg_462" x="364" y="104">
-     *    <g state="open" display="none" id="svg_465">
-     *      <rect x="2" y="2" width="30" height="30" fill="#00FF00" id="svg_466"></rect>
+     *  <svg preserveAspectRatio="xMaxYMax" class="symbol" tgs:schematic-type="equipment-symbol" id="svg_619" x="484" y="404" tgs:point-name="Zone1.PCC_cbr_cust.Status" tgs:symbol-type="circuitbreaker">
+     *    <g tgs:state="open" display="none" id="svg_622">
+     *      <rect x="2" y="2" width="30" height="30" fill="#00FF00" id="svg_623"/>
      *    </g>
-     *    <g state="closed" id="svg_463" style="display:inherit;">
-     *      <rect x="2" y="2" width="30" height="30" fill="#A40000" id="svg_464"></rect>
+     *    <g tgs:state="closed" id="svg_620">
+     *     <rect x="2" y="2" width="30" height="30" fill="#A40000" id="svg_621"/>
      *    </g>
      *  </svg>
      *
      *  @param rootElement
      */
-    exports.transformEquipmentAndReturnName = function( element) {
+    exports.transformEquipmentAndReturnPointName = function( ) {
+      var element = $(this),
+          states = element.find( '[tgs\\:state]'),
+          pointName = element.attr( 'tgs:point-name')
+
+      states.map( function() {
+        var stateElement = $(this),
+            stateName = stateElement.attr( 'tgs:state')
+        stateElement.attr( 'ng-show', 'pointNameMap[\'' + pointName + '\'].currentMeasurement.value === \'' + stateName + '\'')
+        stateElement.removeAttr( 'display')
+        return stateName
+      })
+
+      return pointName
     }
 
 
@@ -6507,6 +6538,10 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
     //  })
     //}
 
+    $scope.equipmentClicked = function( point) {
+
+    }
+
     /**
      * One of our points was dragged away from us.
      * @param uuid
@@ -6538,9 +6573,11 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
               pointIdMap = processPointsAndReturnPointIdMap($scope.points)
               // TODO: what about the old names in the map?
               $scope.points.forEach( function( p) { $scope.pointNameMap[p.name] = p})
+              var pointIds = Object.keys(pointIdMap)
 
-              measurement.subscribe( $scope, Object.keys(pointIdMap), {}, self, onMeasurements)
-              //subscribeToMeasurements(pointIds)
+              measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
+              getCommandsForPoints( pointIds)
+
               return response // for the then() chain
             },
             function( error) {
@@ -6564,7 +6601,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
     }
 
     function processPointsAndReturnPointIdMap(points) {
-      var idMap           = [],
+      var idMap           = {},
           currentMeasurement = {
             value:        '-',
             time:         null,
@@ -6584,6 +6621,24 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
 
       })
       return idMap
+    }
+
+    function getCommandsForPoints(pointIds) {
+      measurement.getCommandsForPoints( pointIds).then(
+        function( response) {
+          var point,
+              data = response.data
+          // data is map of pointId -> commands[]
+          for( var pointId in data ) {
+            point = pointIdMap[pointId]
+            if( point )
+              point.commandSet =  measurement.getCommandSet(point, data[pointId])
+            else
+              console.error( 'Unknown point ID ' + pointId)
+          }
+
+        }
+      )
     }
 
 
