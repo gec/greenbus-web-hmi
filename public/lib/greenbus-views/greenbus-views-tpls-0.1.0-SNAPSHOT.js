@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-10-08
+ * Version: 0.1.0-SNAPSHOT - 2015-10-09
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -6480,13 +6480,15 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
           states = element.find( '[tgs\\:state]'),
           pointName = element.attr( 'tgs:point-name')
 
-      states.map( function() {
-        var stateElement = $(this),
-            stateName = stateElement.attr( 'tgs:state')
-        stateElement.attr( 'ng-show', 'pointNameMap[\'' + pointName + '\'].currentMeasurement.value === \'' + stateName + '\'')
-        stateElement.removeAttr( 'display')
-        return stateName
-      })
+      if( pointName && pointName.length > 0) {
+        states.map( function() {
+          var stateElement = $(this),
+              stateName = stateElement.attr( 'tgs:state')
+          stateElement.attr( 'ng-show', 'pointNameMap[\'' + pointName + '\'].currentMeasurement.value === \'' + stateName + '\'')
+          stateElement.removeAttr( 'display')
+          return stateName
+        })
+      }
 
       return pointName
     }
