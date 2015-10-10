@@ -6694,7 +6694,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
         case 'GOOD':         return '#quality_good';
         case 'QUESTIONABLE': return '#quality_questionable';
         case 'NOTLOADED':    return '#quality_questionable'
-        case 'INVALID':      return '#quality-invalid';
+        case 'INVALID':      return '#quality_invalid';
         default:
           return '#quality_questionable';
       }

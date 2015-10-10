@@ -1,0 +1,28 @@
+
+.voltage-220k{
+	stroke-width:1px;
+	stroke:red;
+}
+
+.voltage-1v{
+	stroke-width:1px;
+	stroke:blue;
+}
+
+.voltage-10mv{
+	stroke-width:1px;
+	stroke:yellow;
+}
+
+
+/* "fill" needed for the lineconnector symbol cirlces and busbar. Won't work for new line paths that zig or zag. */
+.voltage-22kV { stroke-width:1px; stroke:#ef2929;  }
+.voltage-12_4kV { stroke-width:1px; stroke:red;  }
+.voltage-7_2kV { stroke-width:1px; stroke:#fce94f; }
+.voltage-480V { stroke-width:1px; stroke:#FF00FF;  }
+.voltage-380V { stroke-width:1px; stroke:#FFFF00;  }
+.voltage-277V { stroke-width:1px; stroke:aqua;  }
+.voltage-240V { stroke-width:1px; stroke:#729fcf;  }
+.voltage-208V { stroke-width:1px; stroke:deeppink; }
+.voltage-120V { stroke-width:1px; stroke:white;  }
+
