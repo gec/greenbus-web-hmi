@@ -35,6 +35,10 @@ DELETE        /models/:modelId/points/:pointId/override               controller
 POST          /models/:modelId/points/:pointId/nis                    controllers.Application.postPointNis( modelId: String, pointId: String)
 DELETE        /models/:modelId/points/:pointId/nis                    controllers.Application.deletePointOverrideOrNis( modelId: String, pointId: String)
 
+
+GET           /commands                                               controllers.Application.getCommands
+GET           /commands/:name                                         controllers.Application.getCommand(name: String)
+
 POST          /models/:modelId/commandlock                            controllers.Application.postCommandLock( modelId: String)
 DELETE        /models/:modelId/commandlock/:id                        controllers.Application.deleteCommandLock( modelId: String, id: String)
 POST          /models/:modelId/commands/:id                           controllers.Application.postCommand( modelId: String, id: String)
