@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-10-09
+ * Version: 0.1.0-SNAPSHOT - 2015-11-06
  * License: Apache-2.0
  */
 
@@ -18,6 +18,10 @@
 [ng\:cloak], [ng-cloak], [data-ng-cloak], [x-ng-cloak], .ng-cloak, .x-ng-cloak {
   display: none !important;
 }
+.ng-invalid {
+  border: 1px solid red !important;
+}
+
 
 td.gb-alarm-btn-xs {
   text-align: center;
@@ -419,6 +423,12 @@ table.gb-row-radius {
 .gb-value .gb-commands {
   margin-top: 10px;
   margin-bottom: 10px;
+}
+i.gb-command-error {
+  font-size: 2.5em;
+  vertical-align: middle;
+  padding: 0px 12px;
+  color: #b22222;
 }
 .gb-command{
   position:relative;

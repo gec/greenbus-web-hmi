@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-10-09
+ * Version: 0.1.0-SNAPSHOT - 2015-11-06
  * License: Apache-2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/selection/selectAll.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -1271,6 +1271,330 @@ function GBChart( _points, trend, _brushChart) {
   self.uniqueNames()
 
 }
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+
+angular.module('greenbus.views.command', []).
+
+  factory('gbCommandRest', ['rest', function( rest) {
+
+    var exports = {}
+
+    exports.select = function(accessMode, commandIds, success, failure) {
+      var arg = {
+        accessMode: accessMode,
+        commandIds: commandIds
+      }
+      return rest.post('/models/1/commandlock', arg, null, null, success, failure)
+    }
+
+    exports.deselect = function(lockId, success, failure) {
+      return rest.delete('/models/1/commandlock/' + lockId, null, null, success, failure)
+    }
+
+    exports.execute = function(commandId, args, success, failure) {
+      return rest.post('/models/1/commands/' + commandId, args, null, null, success, failure)
+    }
+
+    return exports
+  }]).
+
+  factory('gbCommandEnums', function() {
+
+    return {
+      States: {
+        NotSelected: 'NotSelected',   // -> Selecting
+        Selecting: 'Selecting',       // -> Selected, NotSelected (unauthorized or failure)
+        Selected: 'Selected',         // -> Executing, NotSelected, Deselecting (user or timeout)
+        Deselecting: 'Deselecting',   // -> Executing, NotSelected (user or timeout)
+        Executing: 'Executing'        // -> NotSelected (success or failure)
+      },
+      CommandIcons: {
+        NotSelected: 'fa fa-chevron-right text-primary',
+        Selecting:   'fa fa-chevron-right text-primary fa-spin',
+        Selected:    'fa fa-chevron-left text-primary',
+        Deselecting: 'fa fa-chevron-left text-primary fa-spin',
+        Executing:   'fa fa-chevron-left text-primary'
+      },
+      ExecuteIcons: {
+        NotSelected: '',
+        Selecting:   '',
+        Selected:    'fa fa-sign-in',
+        Deselecting: 'fa fa-sign-in',
+        Executing:   'fa fa-refresh fa-spin'
+      }
+
+    }
+  }).
+
+  controller( 'gbCommandController', ['$scope', 'gbCommandRest', 'gbCommandEnums', '$timeout', function( $scope, gbCommandRest, gbCommandEnums, $timeout) {
+    var selectTimer, lock,
+        States = gbCommandEnums.States,
+        CommandIcons = gbCommandEnums.CommandIcons,
+        ExecuteIcons = gbCommandEnums.ExecuteIcons
+
+    // $scope.model holds the command as returned from the server.
+    $scope.replyError = undefined
+    $scope.state = States.NotSelected
+    $scope.isSelected = false
+
+    $scope.selectClasses = CommandIcons[ States.NotSelected]
+    $scope.executeClasses = ExecuteIcons[ States.NotSelected]
+    $scope.isSetpointType = $scope.model.commandType.indexOf('SETPOINT') === 0
+    if( $scope.isSetpointType) {
+      $scope.setpoint = { value: ''} // MUST be an object for input text for 2-way binding with <input/>!!!
+
+      switch( $scope.model.commandType) {
+        case 'SETPOINT_INT':
+          $scope.pattern = /^[+-]?\d+$/;
+          $scope.placeHolder = 'int'
+          break
+        case 'SETPOINT_DOUBLE':
+          $scope.pattern = /^[-+]?\d+(\.\d+)?$/;
+          $scope.placeHolder = 'decimal'
+          break
+        case 'SETPOINT_STRING':
+          $scope.pattern = undefined;
+          $scope.placeHolder = 'text'
+          break
+        default:
+          break
+      }
+
+    }
+
+    /**
+     * Called by onClick in template
+     * @param command
+     */
+    $scope.selectToggle = function( ) {
+      $scope.replyError = undefined
+      switch( $scope.state) {
+        case States.NotSelected: $scope.select(); break;
+        case States.Selecting:   break;
+        case States.Selected:    $scope.deselect(); break;
+        case States.Executing:   break;
+      }
+    }
+
+    function setState( state) {
+      console.log( 'setState from ' + $scope.state + ' to ' + state)
+      $scope.state = state
+      $scope.isSelected = state === States.Selected || state === States.Deselecting || state === States.Executing
+      $scope.selectClasses = CommandIcons[$scope.state]
+      $scope.executeClasses = ExecuteIcons[$scope.state]
+      console.log( 'gbCommandController.setState ' + $scope.model.name + ' ' + $scope.state + ', selectClasses ' + $scope.selectClasses + ', executeClasses ' + $scope.executeClasses)
+
+      if( state === States.NotSelected && $scope.isSetpointType && $scope.pattern && !$scope.pattern.test( $scope.setpoint.value)) {
+        // If the setpoint value is not visible, but is invalid, there will be a red box around the whole form
+        // and the operator won't see anything wrong. Clear the setpoint value to prevent this.
+        $scope.setpoint.value = ''
+      }
+    }
+    
+    function cancelSelectTimer() {
+      if( selectTimer) {
+        $timeout.cancel( selectTimer)
+        selectTimer = undefined
+      }
+    }
+
+    $scope.select = function() {
+
+      if( $scope.state !== States.NotSelected) {
+        console.error( 'gbCommandController.select invalid state: ' + $scope.state)
+        return
+      }
+
+      setState( States.Selecting)
+
+      gbCommandRest.select( 'ALLOWED', [$scope.model.id],
+        function( data) {
+          lock = data
+          if( lock.expireTime) {
+            setState( States.Selected)
+
+            var delay = lock.expireTime - Date.now()
+            console.log( 'commandLock delay: ' + delay)
+            // It the clock for client vs server is off, we'll use a minimum delay.
+            delay = Math.max( delay, 10)
+            selectTimer = $timeout(function () {
+              lock = undefined
+              selectTimer = undefined
+              if( $scope.state === States.Selected || $scope.state === States.Deselecting || $scope.state === States.Executing)
+                setState( States.NotSelected)
+            }, delay)
+          } else {
+            lock = undefined
+            deselected()
+            alertDanger( 'Select failed. ' + data)
+          }
+        },
+        function( ex, statusCode, headers, config) {
+          console.log( 'gbCommandController.select ' + JSON.stringify( ex))
+          alertException( ex)
+          deselected()
+        })
+    }
+
+    function deselected() {
+      setState( States.NotSelected)
+    }
+
+
+    $scope.deselect = function() {
+
+      if( $scope.state !== States.Selected) {
+        console.error( 'gbCommandController.deselect invalid state: ' + $scope.state)
+        return
+      }
+
+      setState( States.Deselecting)
+
+      gbCommandRest.deselect( lock.id,
+        function( data) {
+          lock = undefined
+          cancelSelectTimer()
+          if( $scope.state === States.Deselecting)
+            setState( States.NotSelected)
+        },
+        function( ex, statusCode, headers, config) {
+          console.log( 'gbCommandController.deselect ' + JSON.stringify( ex))
+          if( $scope.state === States.Deselecting)
+            setState( States.Selected)
+          alertException( ex)
+        })
+    }
+
+    $scope.execute = function() {
+      console.log( 'gbCommandController.execute state: ' + $scope.state)
+      $scope.replyError = undefined
+
+      if( $scope.state !== States.Selected) {
+        console.error( 'gbCommandController.execute invalid state: ' + $scope.state)
+        return
+      }
+
+      var args = {
+        commandLockId: lock.id
+      }
+
+      if( $scope.isSetpointType) {
+
+        if ($scope.setpoint.value === undefined || ($scope.pattern && !$scope.pattern.test($scope.setpoint.value))) {
+          console.log('gbCommandController.execute ERROR: setpoint value is invalid "' + $scope.setpoint.value + '"')
+          switch ($scope.model.commandType) {
+            case 'SETPOINT_INT':
+              alertDanger('Setpoint needs to be an integer value.');
+              return;
+            case 'SETPOINT_DOUBLE':
+              alertDanger('Setpoint needs to be a decimal value.');
+              return;
+            case 'SETPOINT_STRING':
+              alertDanger('Setpoint needs to have a text value.');
+              return;
+            default:
+              alertDanger('Setpoint value "' + $scope.setpoint.value + '" is invalid. Unknown setpoint command type: "' + $scope.model.commandType + '".')
+              console.error('Setpoint has unknown error, "' + $scope.setpoint.value + '" for command type ' + $scope.model.commandType)
+              return
+          }
+        }
+
+        switch ($scope.model.commandType) {
+          case 'SETPOINT_INT':
+            args.setpoint = {intValue: Number($scope.setpoint.value)}
+            break
+          case 'SETPOINT_DOUBLE':
+            args.setpoint = {doubleValue: Number($scope.setpoint.value)}
+            break
+          case 'SETPOINT_STRING':
+            args.setpoint = {stringValue: $scope.setpoint.value}
+            break
+          default:
+            console.error('Setpoint has unknown type, "' + $scope.setpoint.value + '" for command type ' + $scope.model.commandType);
+            break
+        }
+      }
+
+      setState(States.Executing)
+
+      gbCommandRest.execute($scope.model.id, args,
+        function (commandResult) {
+          cancelSelectTimer()
+          alertCommandResult(commandResult)
+          deselected()
+        },
+        function (ex, statusCode, headers, config) {
+          console.log('gbCommandController.execute ' + JSON.stringify(ex))
+          cancelSelectTimer()
+          deselected()
+          alertException(ex)
+        })
+    }
+
+    function alertCommandResult( result) {
+      console.log( 'alertCommandResult: result.status "' + result.status + '"')
+      if( result.status !== 'SUCCESS') {
+        console.log( 'alertCommandResult: result.error "' + result.error + '"')
+        var message = result.status
+        if( result.error)
+          message += ':  ' + result.error
+        $scope.replyError = message
+      }
+    }
+
+    function alertException( ex) {
+      console.log( 'gbCommandController.alertException ' + JSON.stringify( ex))
+      var message = ex.message
+      if( message === undefined || message === '')
+        message = ex.exception
+      $scope.replyError = message
+    }
+
+    function alertDanger( message) {
+      console.log( 'alertDanger message: ' + JSON.stringify( message))
+      $scope.replyError = message
+    }
+
+
+    $scope.$on( '$destroy', function( event ) {
+      cancelSelectTimer()
+    })
+
+  }]).
+
+  directive( 'gbCommand', function(){
+    return {
+      restrict: 'E', // Element name
+      // The template HTML will replace the directive.
+      replace: true,
+      scope: {
+             model : '='
+      },
+      templateUrl: 'greenbus.views.template/command/command.html',
+      controller: 'gbCommandController'
+    }
+  })
+
 /**
  * Copyright 2013-2014 Green Energy Corp.
  *
@@ -3372,309 +3696,6 @@ AlarmSubscriptionView = (function(superClass) {
 //# sourceMappingURL=SubscriptionView.js.map
 
 /**
- * Copyright 2014-2015 Green Energy Corp.
- *
- * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
- * contributor license agreements. See the NOTICE file distributed with this
- * work for additional information regarding copyright ownership. Green Energy
- * Corp licenses this file to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
- *
- * Author: Flint O'Brien
- */
-
-
-/**
- *
- * @param _point
- * @param _commands
- * @constructor
- */
-function CommandSet( _point, _commands, commandRest, $timeout) {
-  // Control & Setpoint States
-
-
-  this.point = _point
-  this.commands = _commands
-  this.commandRest = commandRest
-  this.timeout = $timeout
-  this.state = CommandSet.States.NotSelected
-  this.lock = undefined
-  this.selectedCommand = undefined
-  this.commands.forEach( function( c) {
-    c.selectClasses = CommandSet.CommandIcons[ CommandSet.States.NotSelected]
-    c.executeClasses = CommandSet.ExecuteIcons[ CommandSet.States.NotSelected]
-    c.isSetpoint = c.commandType.indexOf('SETPOINT') === 0
-    c.blockClasses = 'fa fa-unlock'
-    if( c.isSetpoint) {
-      c.setpointValue = undefined
-
-      switch( c.commandType) {
-        case 'SETPOINT_INT':
-          c.pattern = /^[+-]?\d+$/;
-          c.placeHolder = 'int'
-          break
-        case 'SETPOINT_DOUBLE':
-          c.pattern = /^[-+]?\d+(\.\d+)?$/;
-          c.placeHolder = 'decimal'
-          break
-        case 'SETPOINT_STRING':
-          c.pattern = undefined;
-          c.placeHolder = 'text'
-          break
-        default:
-          break
-      }
-
-    }
-
-  })
-}
-
-CommandSet.States = {
-  NotSelected: 'NotSelected',   // -> Selecting
-  Selecting: 'Selecting',       // -> Selected, NotSelected (unauthorized or failure)
-  Selected: 'Selected',         // -> Executing, NotSelected, Deselecting (user or timeout)
-  Deselecting: 'Deselecting',   // -> Executing, NotSelected (user or timeout)
-  Executing: 'Executing'        // -> NotSelected (success or failure)
-}
-
-CommandSet.CommandIcons = {
-  NotSelected: 'fa fa-chevron-right text-primary',
-  Selecting: 'fa fa-chevron-right fa-spin text-primary',
-  Selected: 'fa fa-chevron-left text-primary',
-  Deselecting: 'fa fa-chevron-left fa-spin text-primary',
-  Executing: 'fa fa-chevron-left text-primary'
-}
-CommandSet.ExecuteIcons = {
-  NotSelected: '',
-  Selecting: '',
-  Selected: 'fa fa-sign-in',
-  Deselecting: 'fa fa-sign-in',
-  Executing: 'fa fa-refresh fa-spin'
-}
-
-/**
- * Called by onClick in template
- * @param command
- */
-CommandSet.prototype.selectToggle = function( command) {
-  switch( this.state) {
-    case CommandSet.States.NotSelected: this.select( command); break;
-    case CommandSet.States.Selecting:   break;
-    case CommandSet.States.Selected:    this.deselect( command); break;
-    case CommandSet.States.Executing:   break;
-  }
-  this.point.ignoreRowClick = true
-}
-
-CommandSet.prototype.setState = function( state, command) {
-  console.log( 'setState from ' + this.state + ' to ' + state)
-  this.state = state
-  if( command) {
-    command.selectClasses = CommandSet.CommandIcons[this.state]
-    command.executeClasses = CommandSet.ExecuteIcons[this.state]
-    console.log( 'setState ' + this.state + ', command.classes ' + command.classes)
-  }
-}
-
-CommandSet.prototype.select = function( command) {
-  var self = this
-
-  if( this.state !== CommandSet.States.NotSelected) {
-    console.error( 'CommandSet.select invalid state: ' + this.state)
-    return
-  }
-
-  self.setState( CommandSet.States.Selecting, command)
-
-  this.commandRest.select( 'ALLOWED', [command.id],
-    function( data) {
-      self.lock = data
-      if( self.lock.expireTime) {
-        self.selectedCommand = command
-        self.setState( CommandSet.States.Selected, command)
-
-        var delay = self.lock.expireTime - Date.now()
-        console.log( 'commandLock delay: ' + delay)
-        // It the clock for client vs server is off, we'll use a minimum delay.
-        delay = Math.max( delay, 10)
-        self.selectTimeout = self.timeout(function () {
-          delete self.lock;
-          delete self.selectTimeout;
-          if( self.state === CommandSet.States.Selected || self.state === CommandSet.States.Executing) {
-            self.setState( CommandSet.States.NotSelected, self.selectedCommand)
-            self.selectedCommand = undefined
-          }
-        }, delay)
-      } else {
-        self.deselected()
-        self.alertDanger( 'Select failed. ' + data)
-      }
-    },
-    function( ex, statusCode, headers, config) {
-      console.log( 'CommandSet.select ' + ex)
-      self.alertException( ex)
-      self.deselected()
-    })
-}
-
-CommandSet.prototype.deselected = function() {
-  this.setState( CommandSet.States.NotSelected, this.selectedCommand)
-  this.selectedCommand = undefined
-}
-
-
-CommandSet.prototype.deselect = function( command) {
-  var self = this
-
-  if( this.state !== CommandSet.States.Selected) {
-    console.error( 'CommandSet.deselect invalid state: ' + this.state)
-    return
-  }
-
-  self.setState( CommandSet.States.Deselecting, self.selectedCommand)
-
-  self.commandRest.deselect( self.lock.id,
-    function( data) {
-      delete self.lock;
-      var saveCommand = self.selectedCommand
-      self.deselected()
-      if( saveCommand !== command) {
-        self.select( command)
-      }
-    },
-    function( ex, statusCode, headers, config) {
-      console.log( 'CommandSet.deselect ' + ex)
-      self.deselected()
-      self.alertException( ex)
-
-      var saveCommand = self.selectedCommand
-      self.selectedCommand = undefined
-      if( saveCommand !== command) {
-        self.select( command)
-      }
-    })
-}
-
-function getSetpointInt( value) {
-  var n = Number( value)
-
-}
-CommandSet.prototype.execute = function( command, commandIndex) {
-  var self = this
-
-  if( this.state !== CommandSet.States.Selected) {
-    console.error( 'CommandSet.execute invalid state: ' + this.state)
-    return
-  }
-
-  var args = {
-    commandLockId: self.lock.id
-  }
-
-  if( command.isSetpoint) {
-    if( command.pattern && !command.pattern.test( command.setpointValue)) {
-      switch( command.commandType) {
-        case 'SETPOINT_INT': self.alertDanger( 'Setpoint needs to be an integer value.'); return;
-        case 'SETPOINT_DOUBLE': self.alertDanger( 'Setpoint needs to be a floating point value.'); return;
-        default:
-          console.error( 'Setpoint has unknown error, "' + command.setpointValue + '" for command type ' + command.commandType);
-      }
-    }
-
-    switch( command.commandType) {
-      case 'SETPOINT_INT':
-        args.setpoint = { intValue: Number( command.setpointValue)}
-        break
-      case 'SETPOINT_DOUBLE':
-        args.setpoint = { doubleValue: Number( command.setpointValue)}
-        break
-      case 'SETPOINT_STRING':
-        args.setpoint = { stringValue: command.setpointValue}
-        break
-      default:
-        break
-    }
-  }
-
-  self.setState( CommandSet.States.Executing, command)
-
-
-  self.commandRest.execute( command.id, args,
-    function( commandResult) {
-      self.alertCommandResult( commandResult)
-      self.deselected()
-    },
-    function( ex, statusCode, headers, config) {
-      console.log( 'CommandSet.execute ' + ex)
-      self.deselected()
-      self.alertException( ex)
-    })
-
-  this.point.ignoreRowClick = true
-}
-
-CommandSet.prototype.closeAlert = function( index) {
-  if( this.alerts)
-    this.alerts.splice( index, 1)
-  this.point.ignoreRowClick = true
-}
-
-CommandSet.prototype.alertCommandResult = function( result) {
-  var alert = { message: 'Successful'}
-  alert.type = result.status === 'SUCCESS' ? 'success' : 'danger'
-  if( result.status !== 'SUCCESS') {
-    alert.message = 'ERROR: ' + result.status
-    if( result.error)
-      alert.message += ',  ' + result.error
-  }
-  this.alerts = [ alert ]
-}
-
-CommandSet.prototype.alertException = function( ex) {
-  var alert = {
-    type: 'danger',
-    message: ex.exception + ': ' + ex.message
-  }
-  this.alerts = [ alert ]
-}
-CommandSet.prototype.alertDanger = function( message) {
-  var alert = {
-    type: 'danger',
-    message: message
-  }
-  this.alerts = [ alert ]
-}
-
-CommandSet.prototype.getCommandTypes = function() {
-  var control = '',
-      setpoint = ''
-
-  this.commands.forEach( function( c) {
-    if( control.length === 0 && c.commandType === 'CONTROL') {
-      control = 'control'
-    } else {
-      if( setpoint.length === 0 && c.commandType.indexOf( 'SETPOINT') === 0)
-        setpoint = 'setpoint'
-    }
-  })
-
-  return control && setpoint ? control + ',' + setpoint : control + setpoint
-}
-
-
-
-/**
  * Copyright 2014 Green Energy Corp.
  *
  * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
@@ -3926,22 +3947,6 @@ angular.module( 'greenbus.views.measurement',
   factory('measurement', [ 'rest', 'subscription', 'pointIdToMeasurementHistoryMap', '$filter', '$timeout', function( rest, subscription, pointIdToMeasurementHistoryMap, $filter, $timeout) {
     var number = $filter('number')
 
-    var commandRest = {
-      select:   function(accessMode, commandIds, success, failure) {
-        var arg = {
-          accessMode: accessMode,
-          commandIds: commandIds
-        }
-        return rest.post('/models/1/commandlock', arg, null, null, success, failure)
-      },
-      deselect: function(lockId, success, failure) {
-        return rest.delete('/models/1/commandlock/' + lockId, null, null, success, failure)
-      },
-      execute:  function(commandId, args, success, failure) {
-        return rest.post('/models/1/commands/' + commandId, args, null, null, success, failure)
-      }
-    }
-
     function formatMeasurementValue(value) {
       if( typeof value === 'boolean' || isNaN(value) || !isFinite(value) ) {
         return value
@@ -4039,14 +4044,6 @@ angular.module( 'greenbus.views.measurement',
       return rest.post('/models/1/points/commands', pointIds)
     }
 
-    function getCommandRest() {
-      return commandRest
-    }
-
-    function getCommandSet( point, commands) {
-      return new CommandSet(point, commands, commandRest, $timeout)
-    }
-
 
     /**
      * Public API
@@ -4056,9 +4053,7 @@ angular.module( 'greenbus.views.measurement',
       unsubscribeWithHistory: unsubscribeWithHistory,
       subscribe:              subscribe,
       unsubscribe:            unsubscribe,
-      getCommandsForPoints:   getCommandsForPoints,
-      getCommandRest:         getCommandRest,
-      getCommandSet:          getCommandSet
+      getCommandsForPoints:   getCommandsForPoints
     }
   }]).
 
@@ -4152,7 +4147,7 @@ angular.module( 'greenbus.views.measurement',
       $scope.rowClasses = function(point) {
         return point.rowDetail ? 'gb-row-selected-detail animate-repeat'
           : point.rowSelected ? 'gb-point gb-row-selected animate-repeat'
-          : point.commandSet ? 'gb-point gb-row-selectable animate-repeat'
+          : point.commands ? 'gb-point gb-row-selectable animate-repeat'
           : 'gb-point animate-repeat'
       }
       $scope.togglePointRowById = function(id) {
@@ -4165,7 +4160,7 @@ angular.module( 'greenbus.views.measurement',
           return
 
         point = $scope.points[index]
-        if( !point.commandSet )
+        if( !point.commands )
           return
 
         if( point.rowSelected ) {
@@ -4177,7 +4172,7 @@ angular.module( 'greenbus.views.measurement',
             point:      point,
             name:       point.name + ' ',
             rowDetail:  true,
-            commandSet: point.commandSet
+            commands: point.commands
           }
           $scope.points.splice(index + 1, 0, pointDetails)
           point.rowSelected = true
@@ -4277,7 +4272,7 @@ angular.module( 'greenbus.views.measurement',
               longQuality:  '',
               validity:     'NOTLOADED',
               expandRow:    false,
-              commandSet:   undefined
+              commands:   undefined
             }
         points.forEach(function(point) {
           point.currentMeasurement = angular.extend({}, currentMeasurement)
@@ -4348,8 +4343,8 @@ angular.module( 'greenbus.views.measurement',
             for( var pointId in data ) {
               point = findPoint(pointId)
               if( point ) {
-                point.commandSet = measurement.getCommandSet(point, data[pointId])
-                point.commandTypes = point.commandSet.getCommandTypes().toLowerCase()
+                point.commands = data[pointId]
+                point.commandTypes = getCommandTypes( point.commands).toLowerCase()
                 console.log('commandTypes: ' + point.commandTypes)
               }
             }
@@ -4357,6 +4352,23 @@ angular.module( 'greenbus.views.measurement',
           }
         )
 
+      }
+
+      function getCommandTypes( commands) {
+        var control = '',
+            setpoint = ''
+
+        commands.forEach( function( c) {
+          if( c.commandType.indexOf('SETPOINT') === 0) {
+            if (setpoint.length === 0)
+              setpoint = 'setpoint'
+          } else {
+            if( control.length === 0)
+              control = 'control'
+          }
+        })
+
+        return control && setpoint ? control + ',' + setpoint : control + setpoint
       }
 
       function getPointsAndSubscribeToMeasurements() {
@@ -7245,6 +7257,36 @@ angular.module("greenbus.views.template/chart/charts.html", []).run(["$templateC
     "");
 }]);
 
+angular.module("greenbus.views.template/command/command.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/command/command.html",
+    "<div class=\"form-group\">\n" +
+    "    <label class=\"col-sm-5 control-label\">{{ model.displayName }}</label>\n" +
+    "    <div class=\"col-sm-7\">\n" +
+    "        <div class=\"btn-toolbar\" role=\"toolbar\">\n" +
+    "            <div class=\"btn-group\">\n" +
+    "                <button type=\"button\" class=\"btn btn-default\" ng-click=\"selectToggle()\">Select <i ng-class=\"selectClasses\"></i></button>\n" +
+    "            </div>\n" +
+    "\n" +
+    "            <button ng-if=\"!isSetpointType\" type=\"button\" class=\"btn btn-primary\" ng-click=\"execute()\" ng-show=\"isSelected\">\n" +
+    "                Execute <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"executeClasses\"></i>\n" +
+    "            </button>\n" +
+    "\n" +
+    "            <div ng-if=\"isSetpointType\" class=\"input-group input-group-sm-  {{form.setpoint_value.$error.pattern ? 'has-error' : ''}}\" ng-show=\"isSelected\">\n" +
+    "                <input type=\"text\" class=\"form-control\" ng-model=\"setpoint.value\" name=\"setpoint_value-{{ model.id }}\" ng-pattern=\"pattern\" style=\"width:6em;\" placeholder=\"{{ placeHolder}}\">\n" +
+    "                <button type=\"button\" class=\"btn btn-primary\" ng-click=\"execute()\" style=\"border-top-left-radius: 0; border-bottom-left-radius: 0;\">\n" +
+    "                    Set\n" +
+    "                    <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"executeClasses\"></i>\n" +
+    "                </button>\n" +
+    "            </div>\n" +
+    "\n" +
+    "            <i class=\"fa fa-exclamation-circle gb-command-error\" ng-show=\"replyError\" popover=\"{{replyError}}\" popover-trigger=\"mouseenter\" popover-placement=\"top\"></i>\n" +
+    "\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "</div>\n" +
+    "");
+}]);
+
 angular.module("greenbus.views.template/endpoint/endpoints.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("greenbus.views.template/endpoint/endpoints.html",
     "<div>\n" +
@@ -7585,7 +7627,7 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
     "                            <a href=\"\" ng-click=\"chartAddPointById(point.id)\"><span class=\"glyphicon glyphicon-stats text-muted\" title=\"Graph measurements\"></span></a>\n" +
     "                        </td>\n" +
     "                        <td  ng-if=\"!point.rowDetail\" class=\"gb-value\" ng-click=\"togglePointRowById(point.id)\">\n" +
-    "                            <span class=\"glyphicon glyphicon-edit pull-left text-muted\" style=\"padding-right: 10px; opacity: {{ point.commandSet ? 1 : 0 }}\" title=\"Control or Setpoint\"></span>\n" +
+    "                            <span class=\"glyphicon glyphicon-edit pull-left text-muted\" ng-show=\"point.commands\" style=\"padding-right: 10px;\" title=\"Control or Setpoint\"></span>\n" +
     "                            <gb-measurement-value model=\"point\"></gb-measurement-value>\n" +
     "                        </td>\n" +
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{point.unit}}</td>\n" +
@@ -7594,58 +7636,14 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
     "                        <td ng-if=\"!point.rowDetail\" ng-click=\"togglePointRowById(point.id)\">{{ point.pointType }}</td>\n" +
     "\n" +
     "\n" +
-    "\n" +
     "                        <td ng-if=\"point.rowDetail\" colspan=\"8\">\n" +
-    "\n" +
     "                            <div class=\"row\">\n" +
-    "                                <div class=\"col-md-1\">\n" +
-    "\n" +
-    "                                </div>\n" +
-    "                                <div class=\"col-md-10\">\n" +
-    "\n" +
+    "                                <div class=\"col-md-10 col-md-offset-1\">\n" +
     "                                    <form class=\"form-horizontal\" role=\"form\" name=\"form\">\n" +
-    "                                        <div class=\"form-group\" ng-repeat=\"command in point.commandSet.commands\">\n" +
-    "                                            <label class=\"col-sm-5 control-label\">\n" +
-    "                                                {{ command.displayName }}\n" +
-    "                                            </label>\n" +
-    "                                            <div class=\"col-sm-7\">\n" +
-    "                                                <div class=\"btn-toolbar\" role=\"toolbar\">\n" +
-    "                                                    <div class=\"btn-group\">\n" +
-    "                                                        <!--<button type=\"button\" class=\"btn btn-default\"><i ng-class=\"command.blockClasses\"></i> Block</button>-->\n" +
-    "                                                        <button type=\"button\" class=\"btn btn-default\" ng-click=\"point.commandSet.selectToggle( command)\">Select <i ng-class=\"command.selectClasses\"></i></button>\n" +
-    "                                                    </div>\n" +
-    "\n" +
-    "                                                    <button ng-if=\"!command.isSetpoint\" type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
-    "                                                        Execute <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
-    "                                                    </button>\n" +
-    "\n" +
-    "                                                    <div ng-if=\"command.isSetpoint\" class=\"input-group input-group-sm-  {{form.setpoint_value.$error.pattern ? 'has-error' : ''}}\" style=\"opacity: {{point.commandSet.selectedCommand === command ? 1 : 0}};\">\n" +
-    "                                                        <input type=\"text\" class=\"form-control\" ng-model=\"command.setpointValue\" name=\"setpoint_value\" ng-pattern=\"command.pattern\" style=\"width:6em;\" placeholder=\"{{ command.placeHolder}}\">\n" +
-    "                                                        <button type=\"button\" class=\"btn btn-primary\" ng-click=\"point.commandSet.execute( command, $index)\" style=\"border-top-left-radius: 0; border-bottom-left-radius: 0;\">\n" +
-    "                                                            Set\n" +
-    "                                                            <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"command.executeClasses\"></i>\n" +
-    "                                                        </button>\n" +
-    "                                                    </div>\n" +
-    "                                                </div>\n" +
-    "                                            </div>\n" +
-    "                                        </div>\n" +
+    "                                        <gb-command ng-repeat=\"command in point.commands\" model=\"command\"></gb-command>\n" +
     "                                    </form>\n" +
-    "\n" +
-    "                                </div>\n" +
-    "                                <div class=\"col-md-1\">\n" +
     "                                </div>\n" +
     "                            </div>\n" +
-    "\n" +
-    "                            <div class=\"row\">\n" +
-    "                                <div class=\"col-md-1\">\n" +
-    "                                </div>\n" +
-    "                                <div class=\"col-md-10\">\n" +
-    "                                    <alert ng-repeat=\"alert in point.commandSet.alerts\" type=\"{{alert.type}}\" close=\"point.commandSet.closeAlert($index)\" style=\"text-align: left; white-space: normal;\">{{alert.message}}</alert>\n" +
-    "                                </div>\n" +
-    "                                <div class=\"col-md-1\">\n" +
-    "                                </div>\n" +
-    "                            </div>\n" +
-    "\n" +
     "                        </td>\n" +
     "                    </tr>\n" +
     "                    </tbody>\n" +
