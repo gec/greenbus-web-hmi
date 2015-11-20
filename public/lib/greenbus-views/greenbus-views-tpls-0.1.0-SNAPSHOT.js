@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-11-06
+ * Version: 0.1.0-SNAPSHOT - 2015-11-20
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -2119,7 +2119,6 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
     function onMeasurements( measurements ) {
       measurements.forEach( function( pm){ onMeasurement( pm) })
-      $scope.$digest()
     }
 
     function subscribeToMeasurements( pointIds) {
@@ -3945,7 +3944,8 @@ angular.module( 'greenbus.views.measurement',
  * @constructor
  */
   factory('measurement', [ 'rest', 'subscription', 'pointIdToMeasurementHistoryMap', '$filter', '$timeout', function( rest, subscription, pointIdToMeasurementHistoryMap, $filter, $timeout) {
-    var number = $filter('number')
+    var number = $filter('number'),
+        lastSubscribeSuccessDigestTime = 0
 
     function formatMeasurementValue(value) {
       if( typeof value === 'boolean' || isNaN(value) || !isFinite(value) ) {
@@ -4016,6 +4016,8 @@ angular.module( 'greenbus.views.measurement',
      * @returns A subscription ID which can be used to unsubscribe.
      */
     function subscribe(scope, pointIds, constraints, subscriber, notify) {
+      var digestTimer
+
       //console.log('measurement.subscribe')
       return subscription.subscribe(
         {
@@ -4024,11 +4026,30 @@ angular.module( 'greenbus.views.measurement',
         },
         scope,
         function(subscriptionId, type, measurements) {
+
           if( type === 'measurements' )
             onMeasurements(measurements, subscriber, notify)
           else
             console.error('measurement.subscribe message of unknown type: "' + type + '"')
-          scope.$digest()
+
+          var now = Date.now(),
+              delta = now - lastSubscribeSuccessDigestTime
+
+          if( delta >= 500) {
+            if( digestTimer) {
+              $timeout.cancel( digestTimer)
+              digestTimer = undefined
+            }
+            lastSubscribeSuccessDigestTime = now
+            scope.$digest()
+          } else if( digestTimer === undefined ) {
+            digestTimer = $timeout( function( ) {
+              digestTimer = undefined
+              lastSubscribeSuccessDigestTime = Date.now()
+              scope.$digest()
+            }, 500 - delta )
+          }
+
         },
         function(error, message) {
           console.error('measurement.subscribe ERROR: ' + error + ', message: ' + message)
@@ -4200,6 +4221,7 @@ angular.module( 'greenbus.views.measurement',
 
 
       function onMeasurements(measurements) {
+        //console.log( 'onMeasurements ' + Date.now() + ' ' + measurements.map( function(pm) { return pm.point.id}).join())
         measurements.forEach(function(pm) {
           var point = findPoint(pm.point.id)
           if( point ) {
@@ -4209,7 +4231,6 @@ angular.module( 'greenbus.views.measurement',
             console.error('MeasurementsController.onMeasurements could not find point.id = ' + pm.point.id)
           }
         })
-        $scope.$digest()
       }
 
       function subscribeToMeasurements(pointIds) {
@@ -6611,7 +6632,6 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
           console.error('gbSchematicController.onMeasurements could not find point.id = ' + pm.point.id)
         }
       })
-      $scope.$digest()
     }
 
     function processPointsAndReturnPointIdMap(points) {
