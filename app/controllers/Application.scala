@@ -26,17 +26,17 @@ import io.greenbus.web.websocket.WebSocketServices
 import play.api._
 import play.api.mvc._
 import play.api.libs.json.Json
-import io.greenbus.web.connection.ReefServiceFactory
+import io.greenbus.web.connection.ClientServiceFactory
 import io.greenbus.web.rest.RestServices
 import io.greenbus.web.config.Navigation._
 
 object Application extends Controller with ReefAuthenticationImpl with RestServices with WebSocketServices {
 
   // reefConnectionManager is assigned by Global. Ugly, but can't ask Global _object_ because we need mocked Global during testing.
-  var reefConnectionManager: ActorRef = _
-  def connectionManager: ActorRef = reefConnectionManager
-  var reefServiceFactory: ReefServiceFactory = _
-  def serviceFactory: ReefServiceFactory = reefServiceFactory
+  var aConnectionManager: ActorRef = _
+  def connectionManager: ActorRef = aConnectionManager
+  var aServiceFactory: ClientServiceFactory = _
+  def serviceFactory: ClientServiceFactory = aServiceFactory
   var myWebSocketServiceProviders: Seq[WebSocketServiceProvider] = _
   override def webSocketServiceProviders: Seq[WebSocketServiceProvider] = myWebSocketServiceProviders
 

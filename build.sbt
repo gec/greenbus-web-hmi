@@ -9,7 +9,7 @@ name := "greenbus-web-hmi"
 
 organization in ThisBuild := "io.greenbus"
 
-version := "0.3.0-SNAPSHOT"
+version := "3.0.0.M4-SNAPSHOT"
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala,SbtTwirl)
@@ -70,9 +70,8 @@ libraryDependencies ++= Seq(
   "org.webjars" % "angular-ui-utils" % "0.1.1" exclude("org.webjars", "angularjs"),
   "org.webjars" % "angular-ui-router" % "0.2.13" exclude("org.webjars", "angularjs"),
   "org.webjars" % "momentjs" % "2.10.2",
-  "org.totalgrid.reef" % "reef-client" % "0.6.0.M4-SNAPSHOT" withSources(),
-  "org.totalgrid.msg" % "msg-qpid" % "0.0.1-SNAPSHOT",
-  "io.greenbus.web" %% "web-core" % "0.3.0-SNAPSHOT" withSources(),
+  "io.greenbus" % "greenbus-client" % "3.0.0.M4-SNAPSHOT" withSources(),
+  "io.greenbus.web" %% "web-core" % "3.0.0.M4-SNAPSHOT" withSources(),
   "com.typesafe.slick" %% "slick" % "2.1.0",
   "com.typesafe.play" %% "play-slick" % "0.8.1"
 )

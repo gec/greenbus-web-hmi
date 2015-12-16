@@ -19,8 +19,9 @@
 // No package. Just the root context. It's what play wants.
 
 import io.greenbus.web.config.dal.InitialDB
-import org.totalgrid.msg.Session
-import io.greenbus.web.connection.{ReefServiceFactoryDefault, ConnectionStatus, WebSocketPushActorFactory, ReefConnectionManager}
+import io.greenbus.msg.Session
+import io.greenbus.web.connection.ConnectionManager.WebSocketChannels
+import io.greenbus.web.connection.{ClientServiceFactoryDefault, ConnectionStatus, WebSocketPushActorFactory, ConnectionManager}
 import io.greenbus.web.websocket.{WebSocketPushActor, WebSocketConsumerImpl}
 import play.api._
 import controllers.Application
@@ -40,12 +41,12 @@ import scala.concurrent.Future
 
 object ClientPushActorFactory extends WebSocketPushActorFactory{
   import ConnectionStatus._
-  import ReefConnectionManager._
+  import ConnectionManager._
 
   def makeChildActor( parentContext: ActorContext, actorName: String, connectionStatus: ConnectionStatus, session: Session): WebSocketChannels = {
     // Create a pushChannel that the new actor will use for push
     val (enumerator, pushChannel) = Concurrent.broadcast[JsValue]
-    val actorRef = parentContext.actorOf( Props( new WebSocketPushActor( connectionStatus, session, pushChannel, ReefServiceFactoryDefault)) /*, name = actorName*/) // Getting two with the same name
+    val actorRef = parentContext.actorOf( Props( new WebSocketPushActor( connectionStatus, session, pushChannel, ClientServiceFactoryDefault)) /*, name = actorName*/) // Getting two with the same name
     val iteratee = WebSocketConsumerImpl.getConsumer( actorRef)
     WebSocketChannels( iteratee, enumerator)
   }
@@ -76,17 +77,17 @@ object CorsFilter extends Filter {
  * @author Flint O'Brien
  */
 object Global extends WithFilters(CorsFilter) with GlobalSettings {
-  import ReefConnectionManager.ReefConnectionManagerServiceFactorySingleton
+  import ConnectionManager.DefaultConnectionManagerServicesFactory
 
-  lazy val reefConnectionManager = Akka.system.actorOf(Props( new ReefConnectionManager( ReefConnectionManagerServiceFactorySingleton, ClientPushActorFactory)), "ReefConnectionManager")
+  lazy val connectionManager = Akka.system.actorOf(Props( new ConnectionManager( DefaultConnectionManagerServicesFactory, ClientPushActorFactory)), "ConnectionManager")
 
   override def onStart(app: Application) {
     super.onStart(app)
 
     Logger.info( "Application starting...")
-    Logger.info( "Starting reef connection manager " + reefConnectionManager)
-    Application.reefConnectionManager = reefConnectionManager
-    Application.reefServiceFactory = ReefServiceFactoryDefault
+    Logger.info( "Starting reef connection manager " + connectionManager)
+    Application.aConnectionManager = connectionManager
+    Application.aServiceFactory = ClientServiceFactoryDefault
     Application.myWebSocketServiceProviders = Seq(
       io.greenbus.web.websocket.SubscriptionServicesActor.webSocketServiceProvider
     )
