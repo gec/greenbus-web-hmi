@@ -30,7 +30,7 @@ import io.greenbus.web.connection.ClientServiceFactory
 import io.greenbus.web.rest.RestServices
 import io.greenbus.web.config.Navigation._
 
-object Application extends Controller with ReefAuthenticationImpl with RestServices with WebSocketServices {
+object Application extends Controller with ServiceAuthenticationImpl with RestServices with WebSocketServices {
 
   // reefConnectionManager is assigned by Global. Ugly, but can't ask Global _object_ because we need mocked Global during testing.
   var aConnectionManager: ActorRef = _

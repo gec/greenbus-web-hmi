@@ -14,5 +14,5 @@ dist
 /RUNNING_PID
 /.settings
 /etc
-/reef_*.cfg
+/greenbus-*.cfg
 .DS_Store
