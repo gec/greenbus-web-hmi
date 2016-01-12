@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2015-11-20
+ * Version: 0.1.0-SNAPSHOT - 2016-01-12
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -6611,7 +6611,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
               var pointIds = Object.keys(pointIdMap)
 
               measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
-              getCommandsForPoints( pointIds)
+              getCommandsForPoints( pointIds)  // TODO: does nothing for now.
 
               return response // for the then() chain
             },
@@ -6658,21 +6658,26 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
     }
 
     function getCommandsForPoints(pointIds) {
-      measurement.getCommandsForPoints( pointIds).then(
-        function( response) {
-          var point,
-              data = response.data
-          // data is map of pointId -> commands[]
-          for( var pointId in data ) {
-            point = pointIdMap[pointId]
-            if( point )
-              point.commandSet =  measurement.getCommandSet(point, data[pointId])
-            else
-              console.error( 'Unknown point ID ' + pointId)
-          }
-
-        }
-      )
+      // TODO: see measurement.getCommandsForPoints when schematic implements commands.
+      //measurement.getCommandsForPoints( pointIds).then(
+      //  function( response) {
+      //    var point,
+      //        data = response.data
+      //    // data is map of pointId -> commands[]
+      //    for( var pointId in data ) {
+      //      point = pointIdMap[pointId]
+      //      if( point ) {
+      //        // TODO: see measurement.getCommandsForPoints
+      //        point.commands = data[pointId]
+      //        //point.commandTypes = getCommandTypes( point.commands).toLowerCase()
+      //        console.log('commandTypes: ' + point.commandTypes)
+      //      }
+      //      else
+      //        console.error( 'gbSchematicController.getCommandsForPoints Unknown point ID ' + pointId)
+      //    }
+      //
+      //  }
+      //)
     }
 
 
