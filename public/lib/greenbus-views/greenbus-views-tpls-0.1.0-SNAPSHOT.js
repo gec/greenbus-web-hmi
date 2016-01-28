@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-01-14
+ * Version: 0.1.0-SNAPSHOT - 2016-01-28
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -1451,7 +1451,7 @@ angular.module('greenbus.views.command', []).
         },
         function( ex, statusCode, headers, config) {
           console.log( 'gbCommandController.select ' + JSON.stringify( ex))
-          alertException( ex)
+          alertException( ex, statusCode)
           deselected()
         })
     }
@@ -1481,7 +1481,7 @@ angular.module('greenbus.views.command', []).
           console.log( 'gbCommandController.deselect ' + JSON.stringify( ex))
           if( $scope.state === States.Deselecting)
             setState( States.Selected)
-          alertException( ex)
+          alertException( ex, statusCode)
         })
     }
 
@@ -1547,7 +1547,7 @@ angular.module('greenbus.views.command', []).
           console.log('gbCommandController.execute ' + JSON.stringify(ex))
           cancelSelectTimer()
           deselected()
-          alertException(ex)
+          alertException(ex, statusCode)
         })
     }
 
@@ -1562,11 +1562,18 @@ angular.module('greenbus.views.command', []).
       }
     }
 
-    function alertException( ex) {
-      console.log( 'gbCommandController.alertException ' + JSON.stringify( ex))
+    function getMessageFromException( ex) {
+      if( ! ex)
+        return undefined
       var message = ex.message
       if( message === undefined || message === '')
         message = ex.exception
+      return message
+    }
+
+    function alertException( ex, statusCode) {
+      console.log( 'gbCommandController.alertException statusCode: ' + statusCode + ', exception: ' + JSON.stringify( ex))
+      var message = getMessageFromException( ex)
       $scope.replyError = message
     }
 
@@ -5070,7 +5077,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
      * @param navigationElements The array of Navigation Elements.
      * @returns The first NavigationElement where selected is true; otherwise return undefined.
      */
-    function findFirstSelected(navigationElements) {
+    function findSelected(navigationElements) {
       var i, node, selected
 
       if( !navigationElements || navigationElements.children === 0 )
@@ -5088,7 +5095,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
       for( i = 0; i < navigationElements.length; i++ ) {
         node = navigationElements[i]
         if( node.children && node.children.length > 0 ) {
-          selected = findFirstSelected(node.children)
+          selected = findSelected(node.children)
           if( selected )
             return selected
         }
@@ -5098,7 +5105,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
     }
 
     function callMenuSelectOnFirstSelectedItem_or_callWhenLoaded( navigationElements, scope, menuSelect) {
-      var selected = findFirstSelected(navigationElements)
+      var selected = findSelected(navigationElements)
       if( selected) {
         if( selected.sourceUrl) {
           // @param menuItem  The selected item. The original (current scoped variable 'selected') could have been replaced.
@@ -5224,6 +5231,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
         // need to select one of these new menu items. We'll pick the first one (which is i === 0).
         //
         if( i === 0 && oldParent.selectWhenLoaded) {
+          newParent.selected = true
           oldParent.selectWhenLoaded( newParent);
           delete oldParent.selectWhenLoaded; // just in case
         }
@@ -5307,18 +5315,26 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
        * @param menuSelect Notify method to call when the NavigationElement marked as selected is finished loading.
        */
       getNavTree: function(url, name, scope, menuSelect) {
-        rest.get(url, name, scope, function(navigationElements) {
-          // example: [ {class:'NavigationItem', data: {label:Dashboard, state:dashboard, url:#/dashboard, selected:false, children:[]}}, ...]
-          flattenNavigationElements(navigationElements)
+        return rest.get(url, name, scope).then(
+          function( response) {
+            var navigationElements = response.data
+            // example: [ {class:'NavigationItem', data: {label:Dashboard, state:dashboard, url:#/dashboard, selected:false, children:[]}}, ...]
+            flattenNavigationElements(navigationElements)
 
-          callMenuSelectOnFirstSelectedItem_or_callWhenLoaded( navigationElements, scope, menuSelect)
+            callMenuSelectOnFirstSelectedItem_or_callWhenLoaded( navigationElements, scope, menuSelect)
 
-          navigationElements.forEach(function(node, index) {
-            if( node.sourceUrl )
-              loadTreeNodesFromSource(navigationElements, index, node, scope)
-          })
+            navigationElements.forEach(function(node, index) {
+              if( node.sourceUrl )
+                loadTreeNodesFromSource(navigationElements, index, node, scope)
+            })
 
-        })
+            return response
+          },
+          function( error) {
+            return error
+          }
+
+        )
       }
     } // end return Public API
 
@@ -5410,8 +5426,12 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
     }
   }).
 
-  controller('NavTreeController', ['$scope', '$attrs', '$location', '$state', '$cookies', 'rest', 'navigation', function($scope, $attrs, $location, $state, $cookies, rest, navigation) {
+  controller('NavTreeController', ['$rootScope', '$scope', '$attrs', '$location', '$state', '$cookies', 'rest', 'navigation', function( $rootScope, $scope, $attrs, $location, $state, $cookies, rest, navigation) {
 
+    var currentBranch,
+        firstSelectedBranch,
+        treeControl = {}
+    $scope.treeControl = treeControl  // filled in by <abn-tree tree-control = "treeControl"> (see: https://github.com/nickperkinslondon/angular-bootstrap-nav-tree)
     $scope.navTree = [
       {
         class:    'Loading',
@@ -5428,26 +5448,29 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
       }
     ]
     // GET /models/1/equipment?depth=3&rootTypes=Root
-    var sampleGetResponse = [
-      {
-        'entity':   {
-          'name':  'Some Microgrid',
-          'id':    'b9e6eac2-be4d-41cf-b82a-423d90515f64',
-          'types': ['Root', 'MicroGrid']
-        },
-        'children': [
-          {
-            'entity':   {
-              'name':  'MG1',
-              'id':    '03c2db16-0f78-4800-adfc-9dff9d4598da',
-              'types': ['Equipment', 'EquipmentGroup']
-            },
-            'children': []
-          }
-        ]
-      }
-    ]
+    //var sampleGetResponse = [
+    //  {
+    //    'entity':   {
+    //      'name':  'Some Microgrid',
+    //      'id':    'b9e6eac2-be4d-41cf-b82a-423d90515f64',
+    //      'types': ['Root', 'MicroGrid']
+    //    },
+    //    'children': [
+    //      {
+    //        'entity':   {
+    //          'name':  'MG1',
+    //          'id':    '03c2db16-0f78-4800-adfc-9dff9d4598da',
+    //          'types': ['Equipment', 'EquipmentGroup']
+    //        },
+    //        'children': []
+    //      }
+    //    ]
+    //  }
+    //]
 
+    // When an operator clicks a menu item, the menu item highlighted and this function is called.
+    // This function is specified by the HTML attribute: on-select = "menuSelect(branch)"
+    //
     $scope.menuSelect = function(branch) {
       console.log('NavTreeController.menuSelect ' + branch.label + ', state=' + branch.state + ', class=' + branch.class + ', microgridId=' + branch.microgridId)
 
@@ -5476,19 +5499,34 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
           shortName: branch.label,
           equipmentChildren: branch.equipmentChildren // children that are equipment
         }
-        }
+      }
 
       if( branch.sourceUrl )
         params.sourceUrl = branch.sourceUrl
 
+      currentBranch = branch
+      if( ! firstSelectedBranch)
+        firstSelectedBranch = branch
       $state.go(branch.state, params)
     }
 
+    $rootScope.$on('$stateChangeSuccess', function( event, toState, toParams, fromState, fromParams) {
+
+      // Clicking 'GreenBus' on top menu goes to state 'loading'.
+      if( firstSelectedBranch && toState.name === 'loading') {
+        // if treeControl is empty, abn-tree needs attribute tree-control = "treeControl"
+        if( currentBranch !== firstSelectedBranch && angular.isFunction( treeControl.select_branch))
+          treeControl.select_branch( firstSelectedBranch) // select menu item and call menuSelect
+        else
+          $scope.menuSelect( firstSelectedBranch)
+      }
+    })
 
     return navigation.getNavTree($attrs.href, 'navTree', $scope, $scope.menuSelect)
   }]).
+
   directive('navTree', function() {
-    // <nav-tree href='/coral/menus/analysis'>
+    // <nav-tree href='/apps/operator/menus/left'>
     return {
       restrict:   'E', // Element name
       scope:      true,
@@ -6024,17 +6062,18 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       return Object.prototype.toString.call(obj) == '[object String]'
     }
 
-    function httpRequestError(json, statusCode, headers, config) {
+    function notifyHttpRequestFailure(json, statusCode, headers, config) {
       //   0 Server down
       // 401 Unauthorized
 
 
-      console.error('coralRequest error ' + config.method + ' ' + config.url + ' ' + statusCode + ' json: ' + JSON.stringify(json));
+      console.error('HTTP Request error ' + config.method + ' ' + config.url + ' ' + statusCode + ' json: ' + JSON.stringify(json));
       if( statusCode === 0 ) {
         setStatus({
           status:         STATUS.APPLICATION_SERVER_DOWN,
           reinitializing: false,
-          description:    'Application server is not responding. Your network connection is down or the application server appears to be down.'
+          description:    'Request to server timed out.'
+          //description:    'Application server is not responding. Your network connection is down or the application server appears to be down.'
         });
       } else if( statusCode == 401 ) {
         setStatus({
@@ -6064,13 +6103,13 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       return status
     }
 
-    function get(url, name, $scope, successListener, failureListener) {
-      return getDo(url, name, $scope, successListener, failureListener, $q.defer())
+    function get(url, name, scope, successListener, failureListener) {
+      return getDo(url, name, scope, successListener, failureListener, $q.defer())
     }
-    function getDo(url, name, $scope, successListener, failureListener, deferred) {
+    function getDo(url, name, scope, successListener, failureListener, deferred) {
 
-      if( $scope)
-        $scope.loading = true;
+      if( scope)
+        scope.loading = true;
       //console.log( 'rest.get ' + url + ' retries:' + retries.get);
 
 
@@ -6084,13 +6123,13 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
       }
 
       // Register for controller.$destroy event and kill any retry tasks.
-      if( $scope)
-        $scope.$on('$destroy', function(event) {
+      if( scope)
+        scope.$on('$destroy', function(event) {
           //console.log( 'rest.get destroy ' + url + ' retries:' + retries.get);
-          if( $scope.task ) {
+          if( scope.task ) {
             console.log('rest.get destroy task' + url + ' retries:' + retries.get);
-            $timeout.cancel($scope.task);
-            $scope.task = null;
+            $timeout.cancel(scope.task);
+            scope.task = null;
             retries.get = 0;
           }
         });
@@ -6100,9 +6139,9 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
         retries.get++;
         var delay = retries.get < 5 ? 1000 : 10000
 
-        if( $scope) {
-          $scope.task = $timeout(function() {
-            self.getDo(url, name, $scope, successListener, failureListener, deferred);
+        if( scope) {
+          scope.task = $timeout(function() {
+            self.getDo(url, name, scope, successListener, failureListener, deferred);
           }, delay);
           deferred.notify( 'Status is ' + status.status + '. Retrying in ' + (delay / 1000) + ' seconds')
         } else
@@ -6118,131 +6157,112 @@ angular.module('greenbus.views.rest', ['greenbus.views.authentication']).
 
       // encodeURI because objects like point names can have percents in them.
       $http.get(encodeURI(url), httpConfig).then(
-        function( response) {
-          var json = response.data
-          if( $scope) {
-            if( name)
-              $scope[name] = json;
-            $scope.loading = false;
-          }
-          console.log('rest.get success json.length: ' + json.length + ', url: ' + url);
-
-          // If the get worked, the service must be up.
-          if( status.status != STATUS.UP ) {
-            setStatus({
-              status:         STATUS.UP,
-              reinitializing: false,
-              description:    ''
-            });
-          }
-
-          if( successListener )
-            successListener(json)
-
-          deferred.resolve( {data: json})
-        },
-        function( error) {
-          // error.status
-          //   0 Server down
-          // 400 Bad Request - request is malformed or missing required fields.
-          // 401 Unauthorized
-          // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
-          // 404 Not Found - Server has not found anything matching the Request-URI
-          // 408 Request Timeout
-          // 500 Internal Server Error
-          //
-          if( failureListener )
-            failureListener(error.data, error.status, error.headers, error.config)
-
-          if( error.status === 401 || error.status === 0 )
-            httpRequestError(error.data, error.status, error.headers, error.config)
-
-          deferred.reject( error)
-        }
+        function( response) { requestSuccess( response, deferred, name, scope, successListener, failureListener) },
+        function( error) { requestFailure( error, deferred, failureListener) }
       )
 
       return deferred.promise
-
     }
 
-    function post(url, data, name, $scope, successListener, failureListener) {
+
+    function post(url, data, name, scope, successListener, failureListener) {
       var deferred = $q.defer()
 
       httpConfig.headers = authentication.getHttpHeaders()
 
       // encodeURI because objects like point names can have percents in them.
       $http.post(url, data, httpConfig).then(
-        function( response) {
-          var json = response.data
-          if( name && $scope)
-            $scope[name] = json;
-          console.log('rest.post success json.length: ' + json.length + ', url: ' + url);
-
-          if( successListener )
-            successListener(json)
-          deferred.resolve( {data: json})
-        },
-        function( error) {
-          // error.status
-          //   0 Server down
-          // 400 Bad Request - request is malformed or missing required fields.
-          // 401 Unauthorized
-          // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
-          // 404 Not Found - Server has not found anything matching the Request-URI
-          // 408 Request Timeout
-          // 500 Internal Server Error
-          //
-          if( failureListener )
-            failureListener(error.data, error.status, error.headers, error.config)
-
-          if( error.status === 401 || error.status === 0 )
-            httpRequestError(error.data, error.status, error.headers, error.config)
-
-          deferred.reject( error)
-        }
+        function( response) { requestSuccess( response, deferred, name, scope, successListener, failureListener) },
+        function( error) { requestFailure( error, deferred, failureListener) }
       )
 
       return deferred.promise
     }
 
-    function _delete(url, name, $scope, successListener, failureListener) {
+
+    function _delete(url, name, scope, successListener, failureListener) {
       var deferred = $q.defer()
 
       httpConfig.headers = authentication.getHttpHeaders()
 
       // encodeURI because objects like point names can have percents in them.
       $http.delete(url, httpConfig).then(
-        function( response) {
-          var json = response.data
-          if( name && $scope)
-            $scope[name] = json;
-          console.log('rest.delete success json.length: ' + json.length + ', url: ' + url);
-
-          if( successListener )
-            successListener(json)
-          deferred.resolve( {data: json})
-        },
-        function(error) {
-          // error.status
-          //   0 Server down
-          // 400 Bad Request - request is malformed or missing required fields.
-          // 401 Unauthorized
-          // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
-          // 404 Not Found - Server has not found anything matching the Request-URI
-          // 408 Request Timeout
-          // 500 Internal Server Error
-          //
-          if( error.status === 400 || error.status === 403 )
-            failureListener(error.data, error.status, error.headers, error.config)
-          else
-            httpRequestError(json, statusCode, headers, config)
-
-          deferred.reject( error)
-        }
-
+        function( response) { requestSuccess( response, deferred, name, scope, successListener, failureListener) },
+        function( error) { requestFailure( error, deferred, failureListener) }
       )
 
       return deferred.promise
+    }
+
+
+    function requestSuccess( response, deferred, name, scope, successListener, failureListener) {
+      if( response.status === 0) {
+        requestFailure( response, deferred, failureListener)
+        return
+      }
+
+      var json = response.data
+      if( scope) {
+        if( name !== undefined)
+          scope[name] = json;
+        scope.loading = false;
+      }
+
+      // If the get worked, the service must be up.
+      if( status.status != STATUS.UP ) {
+        setStatus({
+          status:         STATUS.UP,
+          reinitializing: false,
+          description:    ''
+        });
+      }
+
+      if( successListener )
+        successListener(json)
+
+      deferred.resolve( {data: json})
+    }
+
+    function statusTextNotDefined( statusText) {
+      return ! angular.isDefined( statusText) || ! angular.isString( statusText) || statusText.length === 0
+    }
+
+    function requestFailure( responseOrError, deferred, failureListener) {
+      // error.status
+      //   0 Request timed out. Network down or server down.
+      // 400 Bad Request - request is malformed or missing required fields.
+      // 401 Unauthorized
+      // 403 Forbidden - Logged in, but don't have permissions to complete request, resource already locked, etc.
+      // 404 Not Found - Server has not found anything matching the Request-URI
+      // 408 Request Timeout
+      // 500 Internal Server Error
+      //
+      // If the browser timed out the $http request $http can return status=0 in the success function.
+      // Device select/command may have timed out or network or server could be down.
+      // Example success response with status=0:
+      // response: {
+      //   config: { timeout: 10000, cache: false, data: Object, headers: Object, method: "POST", url: "/models/1/commandlock"},
+      //   data: null,
+      //   headers: function( name) {},
+      //   status: 0,
+      //   statusText: ""
+      // }
+
+      if( responseOrError.status === 0) {
+        if( statusTextNotDefined( responseOrError.statusText))
+          responseOrError.statusText =  'Request timed out (status = 0)'
+
+        if( responseOrError.data === undefined || responseOrError.data === null)
+          responseOrError.data = { exception: responseOrError.statusText}
+      }
+
+      if( failureListener )
+        failureListener(responseOrError.data, responseOrError.status, responseOrError.headers, responseOrError.config)
+
+      if( responseOrError.status === 401 || responseOrError.status === 0 )
+        notifyHttpRequestFailure(responseOrError.data, responseOrError.status, responseOrError.headers, responseOrError.config)
+
+      deferred.reject( responseOrError)
     }
 
 

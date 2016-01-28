@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-01-14
+ * Version: 0.1.0-SNAPSHOT - 2016-01-28
  * License: Apache-2.0
  */
 
@@ -211,7 +211,7 @@ td.event-agent {
   font-weight: bold;
   visibility: hidden;
   z-index: 2000;
-  position: absolute;
+  position: fixed;
   text-align: center;
   width: 100%;
   height: 100%;
