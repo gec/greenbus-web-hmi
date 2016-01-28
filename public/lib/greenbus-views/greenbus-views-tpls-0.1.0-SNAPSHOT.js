@@ -5184,23 +5184,61 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
      *   Microgrid2
      *     ...
      *
-     * @param parentTree
-     * @param index
-     * @param newTreeNodes
+     * @param parentTree ex: Loading...
+     * @param index ex: 0
+     * @param newTreeNodes ex: Zone1, Zone2
      */
     function generateNewTreeNodesAtIndexAndPreserveChildren(parentTree, index, newTreeNodes, scope) {
       var i,
           oldParent   = parentTree[index],
-          oldChildren = oldParent.children
-      // Remove the child we're replacing.
-      parentTree.splice(index, 1)
+          oldChildren = oldParent.children  // ex: Equipment, Solar, Energy Storage, ...
 
       for( i = newTreeNodes.length - 1; i >= 0; i-- ) {
         var newParentStatePrefix,
             newParent = newTreeNodes[i]
         newParent.state = oldParent.state
         newParentStatePrefix = getParentStatePrefix( newParent.state)
-        parentTree.splice(index, 0, newParent)
+        //var lastNewParentIndex0 = {
+        //  children: [],
+        //  class: "MicroGrid",
+        //  label: "Zone1",
+        //  state: "microgrids.dashboard",
+        //
+        //  name: "Zone1",
+        //  id: "67bab1df-9348-46bb-8af3-f71e3f3fdf1a",
+        //  equipmentChildren: [],
+        //  microgridId: "67bab1df-9348-46bb-8af3-f71e3f3fdf1a",
+        //  type: "item",
+        //  types: ["Equipment", "MicroGrid", "EquipmentGroup"]
+        //}
+        //var __oldParent = {
+        //  children: [], //Array[5],
+        //  class: "NavigationItemSource",
+        //  label: "Loading...",
+        //  state: "microgrids.dashboard",
+        //
+        //  classes: [],
+        //  expanded: false,
+        //  insertLocation: "REPLACE",
+        //  loading: true,
+        //  selectWhenLoaded: null, // function( menuItem)
+        //  selected: true,
+        //  sourceUrl: "/models/1/equipment?depth=1&rootTypes=MicroGrid",
+        //  uid: "0.9992117963265628"
+        //}
+        if( i === 0) {
+          // overwrite oldParent with newParent's contents so the menu item remains selected.
+          newParent.selected = oldParent.selected
+          for(var key in newParent ) {
+            oldParent[key] = newParent[key]
+          }
+          delete oldParent.insertLocation;
+          delete oldParent.sourceUrl;
+          oldParent.loading = false
+        } else {
+          // Insert after the oldParent
+          parentTree.splice(index+1, 0, newParent)
+        }
 
         // For each new child that we're adding, replicate the old children.
         // Replace $parent in the sourceUrl with its current parent.
@@ -5231,8 +5269,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
         // need to select one of these new menu items. We'll pick the first one (which is i === 0).
         //
         if( i === 0 && oldParent.selectWhenLoaded) {
-          newParent.selected = true
-          oldParent.selectWhenLoaded( newParent);
+          oldParent.selectWhenLoaded( oldParent);
           delete oldParent.selectWhenLoaded; // just in case
         }
 
@@ -5510,6 +5547,10 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
       $state.go(branch.state, params)
     }
 
+    function guiSelectMenu( branch) {
+      treeControl.select_branch( branch) // select menu item and call menuSelect
+    }
+
     $rootScope.$on('$stateChangeSuccess', function( event, toState, toParams, fromState, fromParams) {
 
       // Clicking 'GreenBus' on top menu goes to state 'loading'.
@@ -5522,7 +5563,7 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
       }
     })
 
-    return navigation.getNavTree($attrs.href, 'navTree', $scope, $scope.menuSelect)
+    return navigation.getNavTree($attrs.href, 'navTree', $scope, guiSelectMenu)
   }]).
 
   directive('navTree', function() {
