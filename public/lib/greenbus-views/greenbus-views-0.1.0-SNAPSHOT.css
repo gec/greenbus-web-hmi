@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-01-28
+ * Version: 0.1.0-SNAPSHOT - 2016-03-11
  * License: Apache-2.0
  */
 
@@ -59,6 +59,10 @@ td.event-agent {
   to { transform: scale(1) rotate(360deg);}
 }
 
+.gb-icon-error {color: #d50000}
+.gb-icon-warn {color: #ff6d00}
+.gb-icon-ok {}
+
 .validity-good {color: #9de09d; font-size:1.4em;}
 .validity-invalid {color: #b22222; font-size:1.4em;}
 .validity-questionable {color: #f57900; font-size:1.4em;}
@@ -87,6 +91,35 @@ td.event-agent {
   vertical-align: middle;
   width: 11px;
 }
+
+/* Fix Font Awsome spinners ascillations */
+.fa-cog.fa-spin {transform-origin: 50.14% 48.95%;}
+.fa-spinner.fa-spin {transform-origin: 50.14% 48.95%;}
+.fa-spinner.fa-pulse {transform-origin: 50.14% 48.95%;}
+
+.gb-loading-container {
+  position: relative; /* gb-loading-glass overlays ancestors till 'realitve' ancestor found.*/
+}
+.gb-loading-glass {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height:100%;
+  width:100%;
+  cursor: not-allowed;
+  filter: alpha(opacity=90);
+  opacity: 0.9;
+  background-color: #FFF;
+}
+.gb-loading-spinner {
+  position: absolute;
+  top:150px;
+  width:100%;
+  text-align: center;
+  font-size: 6em;
+  color:lightgray;
+}
+
 
 .gb-chart {
   visibility: visible;
@@ -155,13 +188,6 @@ td.event-agent {
   padding: 0 4px;
 }
 
-.gb-loading-overlay {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background-color: white;
-  padding: 10% 25%;
-}
 .gb-icon {
   margin-right: 4px;
 }

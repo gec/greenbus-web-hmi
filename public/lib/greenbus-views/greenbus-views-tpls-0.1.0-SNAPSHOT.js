@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-01-28
+ * Version: 0.1.0-SNAPSHOT - 2016-03-11
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/selection/selectAll.html"]);
+angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/schematic/equipmentSchematic.html","greenbus.views.template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -442,16 +442,20 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
 
 
       function subscribeToMeasurementHistory( chart, point ) {
-        var firstNotify = true
 
-        function notify() {
-          if( firstNotify) {
-            firstNotify = false
-            chart.trendStart( 300)
+        point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart,
+          function() {
+             // We call trendStart() once. After that, the GBChart auto-updates (scrolls left)
+             // based on wall time.
+            if( ! chart.trendStarted())
+              chart.trendStart( 300)
+          },
+          function( error, message) {
+            console.error( 'gbChartsController.subscribeToMeasurementHistory.error: ' + error + ', message: ' + JSON.stringify( message))
+            point.error = error
+            $scope.$digest()
           }
-        }
-
-        point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart, notify )
+        )
       }
 
       function unsubscribeToMeasurementHistory( chart, point ) {
@@ -597,7 +601,24 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
     }
 
     function subscribeToMeasurementHistory( chart, point) {
-      point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart, notifyMeasurements)
+      point.measurements = measurement.subscribeWithHistory( $scope, point, historyConstraints, chart,
+        function() {
+          // We call trendStart() once. After that, the GBChart auto-updates (scrolls left)
+          // based on wall time.
+          if( ! chart.trendStarted()) {
+            $scope.loading = false
+            $scope.$digest()
+            chart.traits.invalidate( 'resize', 0)
+            chart.brushTraits.invalidate( 'resize', 0)
+            chart.trendStart( 300)
+          }
+        },
+        function( error, message) {
+          console.error( 'gbChartController.subscribeToMeasurementHistory.error: ' + error + ', message: ' + JSON.stringify( message))
+          point.error = error
+          $scope.$digest()
+        }
+      )
     }
 
     function unsubscribeToMeasurementHistory( chart, point) {
@@ -667,7 +688,6 @@ angular.module('greenbus.views.chart', ['greenbus.views.measurement', 'greenbus.
       restrict: 'E', // Element name
       // The template HTML will replace the directive.
       replace: true,
-      transclude: true,
       scope: true,
       templateUrl: 'greenbus.views.template/chart/charts.html',
       controller: 'gbChartsController'
@@ -1187,6 +1207,9 @@ function GBChart( _points, trend, _brushChart) {
   }
 
   self.trendStart = function( interval, duration) {
+    if( self.trendTimer)
+      self.trendStop()
+
     if( duration === undefined)
       duration = interval * 0.95
 
@@ -1203,6 +1226,10 @@ function GBChart( _points, trend, _brushChart) {
       clearInterval( self.trendTimer)
       self.trendTimer = null
     }
+  }
+
+  self.trendStarted = function() {
+    return self.trendTimer !== null
   }
 
   // typ is usually 'trend'
@@ -1630,6 +1657,7 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
 
   controller( 'gbEndpointsController', ['$scope', 'rest', 'subscription', function( $scope, rest, subscription) {
     $scope.endpoints = []
+    $scope.alerts = []
 
     var CommStatusNames = {
       COMMS_DOWN: 'Down',
@@ -1638,7 +1666,12 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
       UNKNOWN: 'Unknown'
     }
 
-    function findEndpointIndex( id) {
+  $scope.closeAlert = function(index) {
+    if( index < $scope.alerts.length)
+      $scope.alerts.splice(index, 1)
+  }
+
+  function findEndpointIndex( id) {
       var i, endpoint,
           length = $scope.endpoints.length
 
@@ -1730,7 +1763,8 @@ angular.module('greenbus.views.endpoint', ['greenbus.views.rest', 'greenbus.view
           $scope.$digest()
         },
         function( messageError, message){
-          console.error( 'EndpointController.subscription error: ' + messageError)
+          console.error( 'EndpointController.subscription error: ' + messageError + ', ' + JSON.stringify( message))
+          $scope.alerts = [{ type: 'danger', message: messageError}]
         })
 
     });
@@ -3761,14 +3795,15 @@ function MeasurementHistory(subscription, point) {
   //Debug: this.measurements.pname = this.point.name
 }
 
-MeasurementHistory.prototype.subscribe = function(scope, constraints, subscriber, notify) {
+MeasurementHistory.prototype.subscribe = function(scope, constraints, subscriber, onMessage, onError) {
 
+  // TODO: each subscribe overrides previous constraints!
   this.measurements.constrainTime(constraints.time)
   this.measurements.constrainSize(constraints.size)
   if( constraints.throttling )
     this.measurements.constrainThrottling(constraints.throttling)
 
-  this.subscribers.push({subscriber: subscriber, notify: notify})
+  this.subscribers.push({subscriber: subscriber, onMessage: onMessage, onError: onError})
 
   if( this.subscriptionId )
     return this.measurements
@@ -3831,7 +3866,7 @@ MeasurementHistory.prototype.onPointWithMeasurements = function(pointWithMeasure
   //console.log( 'onPointWithMeasurements point.name ' + this.point.name + ' measurements.length=' + pointWithMeasurements.measurements.length)
   measurements = pointWithMeasurements.measurements.map(function(m) { return self.convertMeasurement(m) })
   this.measurements.pushPoints(measurements)
-  this.notifySubscribers()
+  this.notifyOnMessage()
 }
 
 MeasurementHistory.prototype.onMeasurements = function(pointMeasurements) {
@@ -3841,7 +3876,7 @@ MeasurementHistory.prototype.onMeasurements = function(pointMeasurements) {
 //      console.log( 'onMeasurements point.name ' + this.point.name + ' measurements.length=' + pointMeasurements.length + ' meas[0]: ' + pointMeasurements[0].measurement.value)
   measurements = pointMeasurements.map(function(pm) { return self.convertMeasurement(pm.measurement) })
   this.measurements.pushPoints(measurements)
-  this.notifySubscribers()
+  this.notifyOnMessage()
 }
 
 MeasurementHistory.prototype.convertMeasurement = function(measurement) {
@@ -3869,15 +3904,24 @@ MeasurementHistory.prototype.convertMeasurement = function(measurement) {
   return measurement
 }
 
-MeasurementHistory.prototype.notifySubscribers = function() {
+/**
+ * Each subscriber handles what to do with new data coming in.
+ */
+MeasurementHistory.prototype.notifyOnMessage = function() {
   this.subscribers.forEach(function(s) {
-    if( s.notify )
-      s.notify.call(s.subscriber)
+    if( s.onMessage )
+      s.onMessage.call(s.subscriber)
   })
+}
 
-//        this.subscribers.forEach( function( subscriber) {
-//            subscriber.traits.update( 'trend')
-//        })
+/**
+ * Each subscriber handles what to do with new data coming in.
+ */
+MeasurementHistory.prototype.notifyOnError = function() {
+  this.subscribers.forEach(function(s) {
+    if( s.onError )
+      s.onError.call(s.subscriber)
+  })
 }
 
 /**'
@@ -3971,11 +4015,11 @@ angular.module( 'greenbus.views.measurement',
      *                          Maximum measurements to keep in Murts.dataStore
      * @param subscriber The subscriber object is used to unsubscribe. It is also the 'this' used
      *                   for calls to notify.
-     * @param notify Optional function to be called each time measurements are added to array.
+     * @param onMessage Optional function to be called each time measurements are added to array.
      *               The function is called with subscriber as 'this'.
-     * @returns An array with measurements. New measurements will be updated as they come in.
+     * @returns An array with measurements. New measurements will be appended as they come in.
      */
-    function subscribeWithHistory(scope, point, constraints, subscriber, notify) {
+    function subscribeWithHistory(scope, point, constraints, subscriber, onMessage, onError) {
       console.log('measurement.subscribeWithHistory ')
 
       var measurementHistory = pointIdToMeasurementHistoryMap[point.id]
@@ -3984,7 +4028,7 @@ angular.module( 'greenbus.views.measurement',
         pointIdToMeasurementHistoryMap[point.id] = measurementHistory
       }
 
-      return measurementHistory.subscribe(scope, constraints, subscriber, notify)
+      return measurementHistory.subscribe(scope, constraints, subscriber, onMessage, onError)
     }
 
     /**
@@ -4002,28 +4046,70 @@ angular.module( 'greenbus.views.measurement',
         console.error('ERROR: meas.unsubscribe point.id: ' + point.id + ' was never subscribed.')
     }
 
-    function onMeasurements(measurements, subscriber, notify) {
+    function onMeasurements(measurements, subscriber, onMessage) {
       measurements.forEach(function(pm) {
         pm.measurement.value = formatMeasurementValue(pm.measurement.value)
       })
-      if( notify )
-        notify.call(subscriber, measurements)
+      if( onMessage )
+        onMessage.call(subscriber, measurements)
     }
+
+    /**
+     * Called on each message coming over the WebSocket
+     * @callback onMessage
+     * @param {string} subscriptionId
+     * @param {string} messageType
+     * @param {(object|array)} data
+     */
+
+    /**
+     * Called on each error coming over the WebSocket
+     *
+     * @callback onError
+     * @param {string} error - Error description
+     * @param {Object} message - The raw message containing the error
+     * @param {string} message.type - The message type (ex: measurements, endpoints, etc.).
+     * @param {string} message.subscriptionId - The subscription ID assigned by this subscription client.
+     * @param {Object} message.error - Same as error
+     * @param {Object} message.jsError - Optional JSON error if there was a JSON parsing problem in the request.
+     * @param {(object|array)} data - Data is usually undefined or null.
+     */
 
     /**
      * Subscribe to measurements.
      *
-     * @param scope The scope of the controller requesting the subscription.
-     * @param pointIds Array of point IDs
-     * @param constraints size: Maximum number of measurements to query from the server
-     *                          Maximum measurements to keep in Murts.dataStore
-     * @param subscriber The subscriber object is used as 'this' for calls to notify.
-     * @param notify Optional function to be called each time one measurement is received.
-     *               The function is called with subscriber as 'this'.
-     * @returns A subscription ID which can be used to unsubscribe.
+     * @param {scope}     scope The scope of the controller requesting the subscription.
+     * @param {array}     pointIds Array of point IDs
+     * @param {number}    constraints size: Maximum number of measurements to query from the server
+     *                                      Maximum measurements to keep in Murts.dataStore
+     * @param {Object}    subscriber The subscriber object is used as 'this' for calls to notify.
+     * @param {onMessage} onMessage Optional function to be called each time one measurement is received.
+     *                              The function is called with subscriber as 'this'.
+     * @param {onError}   onError Optional function called on errors.
+     * @returns A subscriptionId used when calling unsubscribe
      */
-    function subscribe(scope, pointIds, constraints, subscriber, notify) {
-      var digestTimer
+    function subscribe(scope, pointIds, constraints, subscriber, onMessage, onError) {
+      var digestThrottleTimer
+
+      function throttleDigest() {
+        var now = Date.now(),
+            delta = now - lastSubscribeSuccessDigestTime
+
+        if( delta >= 500) {
+          if( digestThrottleTimer) {
+            $timeout.cancel( digestThrottleTimer)
+            digestThrottleTimer = undefined
+          }
+          lastSubscribeSuccessDigestTime = now
+          scope.$digest()
+        } else if( digestThrottleTimer === undefined ) {
+          digestThrottleTimer = $timeout( function( ) {
+            digestThrottleTimer = undefined
+            lastSubscribeSuccessDigestTime = Date.now()
+            scope.$digest()
+          }, 500 - delta )
+        }
+      }
 
       //console.log('measurement.subscribe')
       return subscription.subscribe(
@@ -4033,33 +4119,18 @@ angular.module( 'greenbus.views.measurement',
         },
         scope,
         function(subscriptionId, type, measurements) {
-
-          if( type === 'measurements' )
-            onMeasurements(measurements, subscriber, notify)
-          else
+          if( type === 'measurements' ) {
+            onMeasurements(measurements, subscriber, onMessage)
+            throttleDigest()
+          } else {
             console.error('measurement.subscribe message of unknown type: "' + type + '"')
-
-          var now = Date.now(),
-              delta = now - lastSubscribeSuccessDigestTime
-
-          if( delta >= 500) {
-            if( digestTimer) {
-              $timeout.cancel( digestTimer)
-              digestTimer = undefined
-            }
-            lastSubscribeSuccessDigestTime = now
-            scope.$digest()
-          } else if( digestTimer === undefined ) {
-            digestTimer = $timeout( function( ) {
-              digestTimer = undefined
-              lastSubscribeSuccessDigestTime = Date.now()
-              scope.$digest()
-            }, 500 - delta )
           }
-
         },
         function(error, message) {
           console.error('measurement.subscribe ERROR: ' + error + ', message: ' + message)
+          if( onError) {
+            onError.call( subscriber, error, message)
+          }
         }
       )
     }
@@ -4091,6 +4162,7 @@ angular.module( 'greenbus.views.measurement',
       $scope.points = []
       $scope.pointsFiltered = []
       $scope.selectAllState = 0
+      $scope.alerts = []
 
       // Search
       $scope.searchText = ''
@@ -4145,6 +4217,11 @@ angular.module( 'greenbus.views.measurement',
             return point
         }
         return null
+      }
+
+      $scope.closeAlert = function(index) {
+        if( index < $scope.alerts.length)
+          $scope.alerts.splice(index, 1)
       }
 
       $scope.selectAllChanged = function(state) {
@@ -4227,21 +4304,25 @@ angular.module( 'greenbus.views.measurement',
       }
 
 
-      function onMeasurements(measurements) {
-        //console.log( 'onMeasurements ' + Date.now() + ' ' + measurements.map( function(pm) { return pm.point.id}).join())
-        measurements.forEach(function(pm) {
-          var point = findPoint(pm.point.id)
-          if( point ) {
-            //pm.measurement.value = formatMeasurementValue( pm.measurement.value )
-            point.currentMeasurement = pm.measurement
-          } else {
-            console.error('MeasurementsController.onMeasurements could not find point.id = ' + pm.point.id)
-          }
-        })
-      }
-
       function subscribeToMeasurements(pointIds) {
-        measurement.subscribe($scope, pointIds, {}, self, onMeasurements)
+        measurement.subscribe($scope, pointIds, {}, self,
+          function( measurements) {
+            //console.log( 'onMeasurements ' + Date.now() + ' ' + measurements.map( function(pm) { return pm.point.id}).join())
+            measurements.forEach(function(pm) {
+              var point = findPoint(pm.point.id)
+              if( point ) {
+                //pm.measurement.value = formatMeasurementValue( pm.measurement.value )
+                point.currentMeasurement = pm.measurement
+              } else {
+                console.error('MeasurementsController.onMeasurements could not find point.id = ' + pm.point.id)
+              }
+            })
+          },
+          function( error, message){
+            console.error('gbMeasurementsController.subscribe ' + error + ', ' + JSON.stringify( message))
+            $scope.alerts = [{ type: 'danger', message: error}]
+          }
+        )
       }
 
 
@@ -4405,12 +4486,18 @@ angular.module( 'greenbus.views.measurement',
         promise.then(
           function( response) {
             $scope.points = response.data
-            var pointIds = processPointsAndReturnPointIds($scope.points)
-            subscribeToMeasurements(pointIds)
-            getCommandsForPoints(pointIds)
+            if( $scope.points.length > 0) {
+              var pointIds = processPointsAndReturnPointIds($scope.points)
+              subscribeToMeasurements(pointIds)
+              getCommandsForPoints(pointIds)
+            } else {
+              $scope.alerts = [{ type: 'info', message: 'No points found.'}]
+            }
             return response // for the then() chain
           },
           function( error) {
+            console.error( 'gbPointsTableController. Error ' + error.statusText)
+            $scope.alerts = [{ type: 'danger', message: error.statusText}]
             return error
           }
         )
@@ -5718,18 +5805,26 @@ angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment'
           navigationElement = $stateParams.navigationElement
 
       $scope.points = []
+      $scope.alerts = []
+
+      $scope.closeAlert = function(index) {
+        if( index < $scope.alerts.length)
+          $scope.alerts.splice(index, 1)
+      }
 
       // Initialized from URL or menu click or both
       //
       if( ! navigationElement)
         return
       var promise = $scope.pointsPromise || equipment.getCurrentPoints( true)
-      $scope.points = promise.then(
+      promise.then(
         function( response) {
           $scope.points = response.data
           return response // for the then() chain
         },
         function( error) {
+          console.error( 'gbPointsTableController. Error ' + error.statusText)
+          $scope.alerts = [{ type: 'danger', message: error.statusText}]
           return error
         }
       )
@@ -5787,6 +5882,7 @@ angular.module('greenbus.views.property', [ 'ui.router', 'greenbus.views.rest', 
           navigationElement = $stateParams.navigationElement
 
       $scope.properties = []
+      $scope.alerts = []
 
       // Initialized from URL or menu click or both
       //
@@ -5802,6 +5898,12 @@ angular.module('greenbus.views.property', [ 'ui.router', 'greenbus.views.rest', 
       }
 
       equipmentId = navigationElement.id
+
+
+      $scope.closeAlert = function(index) {
+        if( index < $scope.alerts.length)
+          $scope.alerts.splice(index, 1)
+      }
 
       function addTypesToPropertiesList() {
         if( navigationElement.types)
@@ -5907,7 +6009,8 @@ angular.module('greenbus.views.property', [ 'ui.router', 'greenbus.views.rest', 
             $scope.$digest()
           },
           function(error, message) {
-            console.error('gbPropertiesTableController.subscribe ' + error + ', ' + message)
+            console.error('gbPropertiesTableController.subscribe ' + error + ', ' + JSON.stringify( message))
+            $scope.alerts = [{ type: 'danger', message: error}]
           }
         )
       }
@@ -6431,25 +6534,57 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
    */
   factory('schematic', [ 'rest', 'subscription', 'assert', '$q', function( rest, subscription, assert, $q) {
 
+    //var SVG_QUALITY_CONTENT = {
+    //  GOOD: '<symbol id="quality_good"><title>Quality Good</title></symbol>',
+    //  INVALID: '<symbol id="quality_invalid"><title>Quality Invalid</title><g>' +
+    //  '<path d="m7.5,5c0,0 2.5,0 5,0c2.5,0 2.5,0 2.5,2.5c0,2.5 0,2.5 0,5c0,2.5 0,2.5 -2.5,2.5c-2.5,0 -2.5,0 -5,0c-2.5,0 -2.5,0 -2.5,-2.5c0,-2.5 0,-2.5 0,-5c0,-2.5 0,-2.5 2.5,-2.5z" stroke="#999999" fill="#FF0000"></path>' +
+    //  '<text fill="#FFFFFF" stroke="#999999" stroke-width="0" stroke-dasharray="null" stroke-linejoin="null" stroke-linecap="null" x="10" y="14" font-size="10" font-family="serif" text-anchor="middle" space="preserve" fill-opacity="1" stroke-opacity="1" transform="" font-weight="bold">X</text>' +
+    //  '</g></symbol>',
+    //  QUESTIONABLE: '<symbol id="quality_questionable"><title>Quality Questionable</title><g>' +
+    //  '<path fill="#FFFF00" stroke="#999999" d="m7.5,5c0,0 2.5,0 5,0c2.5,0 2.5,0 2.5,2.5c0,2.5 0,2.5 0,5c0,2.5 0,2.5 -2.5,2.5c-2.5,0 -2.5,0 -5,0c-2.5,0 -2.5,0 -2.5,-2.5c0,-2.5 0,-2.5 0,-5c0,-2.5 0,-2.5 2.5,-2.5z"></path>' +
+    //  '<text font-weight="bold" text-anchor="middle" font-family="serif" font-size="10" y="14" x="10" stroke-linecap="null" stroke-linejoin="null" stroke-dasharray="null" stroke-width="0" stroke="#999999" fill="#000000">?</text>' +
+    //  '</g></symbol>'
+    //}
+
     // public API
     var exports = {
-      KEY_SCHEMATIC: 'schematic'
-    }
+          KEY_SCHEMATIC: 'schematic'
+        },
+        SVG_QUALITY = {
+          GOOD: {
+            id:'quality_good',
+            title:'Quality Good'
+          },
+          INVALID: {
+            id:'quality_invalid',
+            title:'Quality Invalid',
+            pathAttrs: {d:'m7.5,5c0,0 2.5,0 5,0c2.5,0 2.5,0 2.5,2.5c0,2.5 0,2.5 0,5c0,2.5 0,2.5 -2.5,2.5c-2.5,0 -2.5,0 -5,0c-2.5,0 -2.5,0 -2.5,-2.5c0,-2.5 0,-2.5 0,-5c0,-2.5 0,-2.5 2.5,-2.5z', stroke:'#999999', fill:'#FF0000'},
+            textAttrs: {fill:'#FFFFFF', stroke:'#999999', 'stroke-width':'0', 'stroke-dasharray':'null', 'stroke-linejoin':'null', 'stroke-linecap':'null', x:'10', y:'14', 'font-size':'10', 'font-family':'serif', 'text-anchor':'middle', space:'preserve', 'fill-opacity':'1', 'stroke-opacity':'1', transform:'', 'font-weight':'bold'},
+            text: 'X'
+          },
+          QUESTIONABLE: {
+            id:'quality_questionable',
+            title:'Quality Questionable',
+            pathAttrs: {d:'m7.5,5c0,0 2.5,0 5,0c2.5,0 2.5,0 2.5,2.5c0,2.5 0,2.5 0,5c0,2.5 0,2.5 -2.5,2.5c-2.5,0 -2.5,0 -5,0c-2.5,0 -2.5,0 -2.5,-2.5c0,-2.5 0,-2.5 0,-5c0,-2.5 0,-2.5 2.5,-2.5z', stroke:'#999999', fill:'#FFFF00'},
+            textAttrs: {fill:'#000000', stroke:'#999999', 'stroke-width':'0', 'stroke-dasharray':'null', 'stroke-linejoin':'null', 'stroke-linecap':'null', x:'10', y:'14', 'font-size':'10', 'font-family':'serif', 'text-anchor':'middle', space:'preserve', 'fill-opacity':'1', 'stroke-opacity':'1', transform:'', 'font-weight':'bold'},
+            text: '?'
+          }
+        }
 
 
     Array.prototype.unique = [].unique || function(){
-      var u = {}, a = [];
-      for(var i = 0, l = this.length; i < l; ++i){
-        if(u.hasOwnProperty(this[i])) {
-          continue;
+        var u = {}, a = [];
+        for(var i = 0, l = this.length; i < l; ++i){
+          if(u.hasOwnProperty(this[i])) {
+            continue;
+          }
+          a.push(this[i]);
+          u[this[i]] = 1;
         }
-        a.push(this[i]);
-        u[this[i]] = 1;
+        return a;
       }
-      return a;
-    }
 
-    exports.subscribe = function( equipmentId, scope, notify) {
+    exports.subscribe = function( equipmentId, scope, onMessage, onError) {
 
       var subscriptionId,
           json = {
@@ -6464,14 +6599,18 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
           switch( type) {
             case 'notification.property':
               assert.equals( data.value.key, exports.KEY_SCHEMATIC, 'schematic.subscribe notification.property: ')
-              notify( subscriptionId, data.value.value, data.operation)
+              onMessage( subscriptionId, data.value.value, data.operation)
               break
             case 'properties':
               if( data.length > 0) {
                 assert.equals( data[0].key, exports.KEY_SCHEMATIC, 'schematic.subscribe properties: ')
-                notify( subscriptionId, data[0].value, 'CURRENT')
+                onMessage( subscriptionId, data[0].value, 'CURRENT')
               } else {
                 console.log( 'schematic.subscribe to schematic - no schematic property')
+                if( angular.isFunction( onError)) {
+                  var error = 'No "schematic" property found.'
+                  onError( error, {error: error})
+                }
               }
               break
             default:
@@ -6481,6 +6620,9 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
         },
         function(error, message) {
           console.error('gbPropertiesTableController.subscribe ' + error + ', ' + message)
+          if( angular.isFunction( onError)) {
+            onError(error, message)
+          }
         }
       )
 
@@ -6539,8 +6681,92 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       return symbols
     }
 
+
+    /**
+     * Must create SVG elements in the 'http://www.w3.org/2000/svg' namespace!
+     *
+     * @param tag
+     * @param attrs
+     * @returns {Element}
+     */
+    function makeSvgElement(tag, attrs) {
+      var xmlElem = document.createElementNS('http://www.w3.org/2000/svg', tag)
+      if( attrs) {
+        for (var k in attrs)
+          xmlElem.setAttribute(k, attrs[k])
+      }
+      return xmlElem
+    }
+
+    /**
+     * Have to crate the quality symbols manually in the 'http://www.w3.org/2000/svg' namespace!
+     * @param symbol
+     * @returns {SvgSymbol}
+     */
+    function makeSvgSymbol( symbol) {
+      var symbolEl, el
+
+      symbolEl = makeSvgElement( 'symbol', {id: symbol.id})
+      el = makeSvgElement( 'title')
+      el.appendChild( document.createTextNode(symbol.title))
+      symbolEl.appendChild( el)
+
+      if( symbol.pathAttrs) {
+        el = makeSvgElement( 'path', symbol.pathAttrs)
+        symbolEl.appendChild( el)
+      }
+      if( symbol.textAttrs) {
+        el = makeSvgElement( 'text', symbol.textAttrs)
+        el.appendChild( document.createTextNode(symbol.text))
+        symbolEl.appendChild( el)
+      }
+
+      return symbolEl
+    }
+
+    /**
+     * Ensure quality symbols exist in first defs element in schematic.
+     *
+     * @param rootElement
+     */
+    exports.ensureQualitySymbolsInDefs = function( rootElement) {
+      // Example schematic
+      //   <?xml version="1.0"?>
+      //   <svg ...>
+      //     <title>...</title>
+      //     <defs>
+      //       <symbol id="quality_questionable"> ...</symbol>
+      //       <symbol id="quality_invalid"> ...</symbol>
+      //       <symbol id="quality_good"> ...</symbol>
+      //     </defs>
+      //     ...
+      //   </svg>
+      var defs, good, invalid, questionable,
+          svg = $(rootElement)
+
+      if( svg.length === 0)
+        return  // TODO: handle no SVG error case
+
+      defs = svg.children( 'defs').eq(0)
+      if( defs.length === 0) {
+        svg.prepend( makeSvgElement('defs'))
+        defs = svg.children( 'defs')
+      }
+
+      good = defs.children( '#quality_good')
+      invalid = defs.children( '#quality_invalid')
+      questionable = defs.children( '#quality_questionable')
+
+      if( good.length === 0)
+        defs.append( makeSvgSymbol( SVG_QUALITY.GOOD))
+      if( invalid.length === 0)
+        defs.append( makeSvgSymbol( SVG_QUALITY.INVALID))
+      if( questionable.length === 0)
+        defs.append( makeSvgSymbol( SVG_QUALITY.QUESTIONABLE))
+    }
+
     exports.transformSymbols = function( symbols) {
-      var measurementPointNames, equipmentPointNames, pointNames, t
+      var measurementPointNames, equipmentPointNames, pointNames
       // Convert jQuery object to array of strings.
       measurementPointNames  = symbols.measurements.map( exports.transformMeasurementAndReturnPointName).get()
       equipmentPointNames  = symbols.equipment.map( exports.transformEquipmentAndReturnPointName).get()
@@ -6582,7 +6808,9 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       //    unit: "V"
       // }
       text.html( '{{ pointNameMap[\'' + pointName + '\'].currentMeasurement.value }} {{ pointNameMap[\'' + pointName + '\'].unit }}')
-      useQuality.attr( 'xlink:href', '{{ pointNameMap[\'' + pointName + '\'].currentMeasurement.validity | schematicValidityDef }} ')
+      //useQuality.attr( 'ng-href', '{{ pointNameMap[\'' + pointName + '\'].currentMeasurement.validity | schematicValidityToHref }} ')
+      //useQuality.attr( 'xlink:href', '')  // ng-href will fill this in. See http://jsbin.com/sigoleya/1/edit?html,js,output
+      useQuality.attr( 'xlink:href', '{{ pointNameMap[\'' + pointName + '\'].currentMeasurement.validity | schematicValidityToHref }} ')
 
       element.attr( 'ng-click', 'equipmentClicked( pointNameMap[\'' + pointName + '\'])')
 
@@ -6621,13 +6849,6 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
     }
 
 
-    function filterPoints( elem) {
-      return elem.attr('tgs\\:schematic-type') === 'point'
-    }
-    function filterEquipment( elem) { return elem.attr('tgs\\:schematic-type') === 'equipment-symbol'}
-    function filterNavigationAreas( elem) { return elem.attr('tgs\\:schematic-type') === 'navigation-area'}
-    function filterNavigationLabels( elem) { return elem.attr('tgs\\:schematic-type') === 'navigation-label'}
-
     return exports
 
   }]).
@@ -6655,21 +6876,15 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
     $scope.symbols = undefined
     $scope.pointNames = []
     $scope.pointNameMap = {} // points by point name. {id, name:, currentMeasurement:}
+    $scope.alerts = []
 
 
-    //if( pointIds.length > 0) {
-    //  var url = '/models/1/points?' + rest.queryParameterFromArrayOrString( 'pids', pointIds)
-    //  rest.get( url, 'points', $scope, function( data) {
-    //    data.forEach( function( point) {
-    //      $scope.schematic.addPoint( point)
-    //      subscribeToMeasurementHistory( $scope.schematic, point )
-    //    })
-    //    $scope.invalidateWindow()
-    //  })
-    //}
+    $scope.closeAlert = function(index) {
+      if( index < $scope.alerts.length)
+        $scope.alerts.splice(index, 1)
+    }
 
     $scope.equipmentClicked = function( point) {
-
     }
 
     /**
@@ -6697,24 +6912,30 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       if( newValue !== undefined) {
         console.log( 'gbSchematicController: got pointNames.length: ' + $scope.pointNames.length)
         // TODO: unsubscribe from previous schematic's points. Could optimize for large overlaps in points when schematic changes.
-        if( $scope.pointNames.length > 0)
+        if( $scope.pointNames.length > 0) {
           schematic.getPointsByName( $scope.pointNames).then(
             function( response) {
+              // We get the points that exist. If some points don't exist, the values remain as XXXX and invalid quality.
               $scope.points = response.data
               pointIdMap = processPointsAndReturnPointIdMap($scope.points)
               // TODO: what about the old names in the map?
               $scope.points.forEach( function( p) { $scope.pointNameMap[p.name] = p})
               var pointIds = Object.keys(pointIdMap)
 
-              measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
+              measurement.subscribe( $scope, pointIds, {}, self, onMeasurements, onError)
               getCommandsForPoints( pointIds)  // TODO: does nothing for now.
 
+              $scope.loading = false
               return response // for the then() chain
             },
             function( error) {
+              var message = 'Error getting points by name - status: ' + error.status + ', statusText: ' + error.statusText
+              console.error( 'gbSchematicController: ' + message)
+              $scope.alerts = [{ type: 'danger', message: message}]
               return error
             }
           )
+        }
       }
     })
 
@@ -6754,15 +6975,19 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
         }
       })
     }
+    function onError(error, message) {
+      console.error( 'gbSchematicController.subscribe.onError: ' + error + ', message = ' + JSON.stringify( message))
+      $scope.alerts = [{ type: 'danger', message: error}]
+    }
 
     function processPointsAndReturnPointIdMap(points) {
       var idMap           = {},
           currentMeasurement = {
-            value:        '-',
+            value:        'XXXXXXXX', // start with XXX in case point ID is wrong.
             time:         null,
             shortQuality: '',
             longQuality:  '',
-            validity:     'NOTLOADED',
+            validity:     'INVALID', // start as invalid in case point ID is wrong.
             expandRow:    false,
             commandSet:   undefined
           }
@@ -6806,11 +7031,17 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       if( !equipmentId)
         return
 
-      return schematic.subscribe( equipmentId, $scope, onSchematic)
-    }
-    function onSchematic( subscriptionId, content, eventType) {
-      $scope.svgSource = content  // directive is watching this and will parse SVG and set $scope.pointNames.
-      $scope.$digest()
+      return schematic.subscribe( equipmentId, $scope,
+        function( subscriptionId, content, eventType) {
+          $scope.svgSource = content  // directive is watching this and will parse SVG and set $scope.pointNames.
+          $scope.$digest()
+        },
+        function( error, message) {
+          $scope.alerts = [{ type: 'danger', message: error}]
+          $scope.loading = false
+          $scope.$digest()
+        }
+      )
     }
 
     subscribe()
@@ -6821,22 +7052,25 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
   directive('gbEquipmentSchematic', [ '$compile', 'schematic', function( $compile, schematic) {
     return {
       restrict: 'E',
-      scope: {
-        //equipmentId: '='
-      },
+      scope:    true,
       controller: 'gbSchematicController',
+      templateUrl: 'greenbus.views.template/schematic/equipmentSchematic.html',
       link: function (scope, elem, attrs) {
         var symbols
-        //var chartEl = d3.select(elem[0])
 
+        // The controller does the subscription and we add the SVG schematic to the DOM.
         scope.$watch('svgSource', function(newValue) {
           if( newValue !== undefined) {
+            var elemChild, svg
 
-            elem.html(newValue);
-            symbols = schematic.parseElements( elem)
+            elemChild = elem.find('.gb-equipment-schematic')
+            svg = $.parseHTML( newValue)
+            schematic.ensureQualitySymbolsInDefs( svg)
+            elemChild.prepend(svg)
+            symbols = schematic.parseElements( elemChild)
             symbols.pointNames = schematic.transformSymbols( symbols)
 
-            $compile(elem.contents())(scope);
+            $compile(svg)(scope);
             scope.symbols = symbols
             scope.pointNames = symbols.pointNames
           }
@@ -6846,18 +7080,30 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
     };
   }]).
 
-  filter('schematicValidityDef', function() {
+  filter('schematicValidityToHref', function() {
     return function(validity) {
       switch( validity ) {
         case 'GOOD':         return '#quality_good';
         case 'QUESTIONABLE': return '#quality_questionable';
-        case 'NOTLOADED':    return '#quality_questionable'
         case 'INVALID':      return '#quality_invalid';
         default:
-          return '#quality_questionable';
+          return '#quality_invalid';
       }
     };
-  })
+  })//.
+
+  // Was being used for modal with list of issues.
+  //filter('schematicIssueIcon', function() {
+  //  return function(validity) {
+  //    switch( validity ) {
+  //      case 'error':         return 'fa fa-times-circle gb-icon-error';
+  //      case 'warning': return 'fa fa-exclamation-triangle gb-icon-warn';
+  //      case 'information':    return 'fa fa-info-circle gb-icon-ok'
+  //      default:
+  //        return 'fa fa-exclamation-triangle';
+  //    }
+  //  };
+  //})
 
 
 
@@ -7046,7 +7292,8 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
           UNOPENED: 'UNOPENED',
           OPENING: 'OPENING',
           CLOSED: 'CLOSED',
-          UP: 'UP'
+          UP: 'UP',
+          ALL_SUBSCRIPTIONS_CANCELLED: 'ALL_SUBSCRIPTIONS_CANCELLED'
         },
         DIGEST = {
           NONE: 0,   // No current Angular digest cycle
@@ -7100,6 +7347,10 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
             break;
           case 'SubscriptionExceptionMessage':
             console.error( 'SubscriptionExceptionMessage: ' + JSON.stringify( message.data))
+            break;
+          case 'AllSubscriptionsCancelledMessage':
+            console.error( 'AllSubscriptionsCancelledMessage: ' + JSON.stringify( message.data))
+            setStatus( DIGEST.NONE, STATUS.ALL_SUBSCRIPTIONS_CANCELLED, 'All subscriptions cancelled. Please refresh browser.')
             break;
 
           default:
@@ -7224,8 +7475,6 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
     }
 
     function makeSubscriptionId( json) {
-      //var messageKey = Object.keys( json)[0]
-      // add the messageKey just for easier debugging.
       return 'subscription.' + json.name + '.' + generateUUID();
     }
 
@@ -7259,8 +7508,41 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
       subscriptionIdMap[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
     }
 
+    /**
+     * Called on each message coming over the WebSocket
+     * @callback onMessage
+     * @param {string} subscriptionId
+     * @param {string} messageType
+     * @param {(object|array)} data
+     */
 
-    function subscribe( json, scope, messageListener, errorListener) {
+    /**
+     * Called on each error coming over the WebSocket
+     *
+     * @callback onError
+     * @param {string} error - Error description
+     * @param {Object} message - The raw message containing the error
+     * @param {string} message.type - The message type (ex: measurements, endpoints, etc.).
+     * @param {string} message.subscriptionId - The subscription ID assigned by this subscription client.
+     * @param {Object} message.error - Same as error above
+     * @param {Object} message.jsError - Optional JSON error if there was a JSON parsing problem in the request.
+     * @param {(object|array)} data - Data is usually undefined or null.
+     */
+
+    /**
+     *
+     * Error handling
+     * * Send to
+     *
+     * @param {Object} json - The request sent over the WebSocket.
+     * @param {string} json.name - The subscription name recognized by the server.
+     * @param {*}      json.* - The subscription request properties that goes with the specific subscription
+     * @param {scope} scope - Unsubscribe it registered on scope $destroy event.
+     * @param {onMessage} onMessage - Called for each message
+     * @param {onError}   onError - Called when message contains an error (an 'error' property)
+     * @returns {string} subscriptionId used when calling unsubscribe
+     */
+    function subscribe( json, scope, onMessage, onError) {
 
       var subscriptionId = addSubscriptionIdToMessage( json)
       var request = JSON.stringify( json)
@@ -7274,10 +7556,10 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
           // We're good, so save request for WebSocket.onmessage()
           console.log( 'subscribe: send( ' + request + ')')
           registerSubscriptionOnScope( scope, subscriptionId);
-          subscriptionIdMap[ subscriptionId] = { 'message': messageListener, 'error': errorListener}
+          subscriptionIdMap[ subscriptionId] = { 'message': onMessage, 'error': onError}
         } catch( ex) {
-          if( errorListener)
-            errorListener( 'Could not send subscribe request to server. Exception: ' + ex)
+          if( onError)
+            onError( 'Could not send subscribe request to server. Exception: ' + ex)
           subscriptionId = null
         }
 
@@ -7293,21 +7575,21 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
             if( ! webSocket)
               throw 'WebSocket create failed.'
 
-            pushPendingSubscription( subscriptionId, scope, request, messageListener, errorListener)
+            pushPendingSubscription( subscriptionId, scope, request, onMessage, onError)
 
           } catch( ex) {
             var description = 'Unable to open WebSocket connection to server. Exception: ' + ex
             // TODO: not logged in!
             setStatus( DIGEST.CURRENT, STATUS.CLOSED, description)
             webSocket = null
-            if( errorListener)
-              errorListener( description)
+            if( onError)
+              onError( description)
             subscriptionId = null
           }
 
         } else {
           // Already opening WebSocket, STATUS.OPENING. Just push pending.
-          pushPendingSubscription( subscriptionId, scope, request, messageListener, errorListener)
+          pushPendingSubscription( subscriptionId, scope, request, onMessage, onError)
         }
 
       }
@@ -7355,14 +7637,12 @@ angular.module("greenbus.views.template/chart/chart.html", []).run(["$templateCa
     "            <li class=\"gb-legend\" ng-repeat=\"point in chart.points\">\n" +
     "                <div class=\"gb-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">\n" +
     "                    <span class=\"gb-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>\n" +
+    "                    <i class=\"fa fa-exclamation-triangle gb-icon gb-icon-error\" ng-show=\"point.error\" title=\"{{ point.error }}\"></i>\n" +
     "                    <a class=\"gb-remove\" href=\"\" ng-click=\"removePoint( point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>\n" +
     "                </div>\n" +
     "            </li>\n" +
     "        </ul>\n" +
     "        <div id=\"chart-container\" class=\"gb-win-container\" style=\"height: 100%\">\n" +
-    "            <!--<div class=\"gb-loading-overlay\" ng-show=\"loading\">-->\n" +
-    "                <!--<div ng-include src=\"'/partials/loadingprogress.html'\"></div>-->\n" +
-    "            <!--</div>-->\n" +
     "            <div class=\"gb-win-content\" ng-hide=\"loading\" droppable target=\"chart\" on-drop=\"onDropPoint\">\n" +
     "                <div chart=\"chart.traits\" data=\"chart.points\" selection=\"chart.selection\"  ng-style=\"styleMain()\"></div>\n" +
     "                <div chart=\"chart.brushTraits\" data=\"chart.points\" selection=\"chart.brushSelection\"  ng-style=\"styleBrush()\"></div>\n" +
@@ -7389,6 +7669,7 @@ angular.module("greenbus.views.template/chart/charts.html", []).run(["$templateC
     "            <li class=\"gb-legend\" ng-repeat=\"point in chart.points\">\n" +
     "                <div class=\"gb-icon-text draggable\" draggable ident=\"point.id\" source=\"chart\" on-drag-success=\"onDragSuccess\">\n" +
     "                    <span class=\"gb-legend-text\" style=\"border-bottom-color: {{ $parent.chart.traits.color(point) }}\">{{point.name}}</span>\n" +
+    "                    <i class=\"fa fa-exclamation-triangle gb-icon gb-icon-error\" ng-show=\"point.error\" title=\"{{ point.error }}\"></i>\n" +
     "                    <a class=\"gb-remove\" href=\"\" ng-click=\"removePoint( chart, point)\"><span class=\"glyphicon glyphicon-remove\"></span></a>\n" +
     "                </div>\n" +
     "            </li>\n" +
@@ -7439,6 +7720,7 @@ angular.module("greenbus.views.template/endpoint/endpoints.html", []).run(["$tem
     "    <h3>Endpoints</h3>\n" +
     "\n" +
     "    <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "        <alert ng-repeat=\"alert in alerts\" type=\"{{alert.type}}\" close=\"closeAlert($index)\">{{alert.message}}</alert>\n" +
     "        <table class=\"table table-condensed\">\n" +
     "            <thead>\n" +
     "            <tr>\n" +
@@ -7740,6 +8022,7 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
     "    <div class=\"row\">\n" +
     "        <div class=\"col-md-12\">\n" +
     "            <div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "                <alert ng-repeat=\"alert in alerts\" type=\"{{alert.type}}\" close=\"closeAlert($index)\">{{alert.message}}</alert>\n" +
     "                <table class=\"table table-condensed gb-row-radius\" ng-show=\"points.length > 0\">\n" +
     "                    <thead>\n" +
     "                    <tr>\n" +
@@ -7914,6 +8197,7 @@ angular.module("greenbus.views.template/notification/notification.html", []).run
 angular.module("greenbus.views.template/point/pointsTable.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("greenbus.views.template/point/pointsTable.html",
     "<div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "    <alert ng-repeat=\"alert in alerts\" type=\"{{alert.type}}\" close=\"closeAlert($index)\">{{alert.message}}</alert>\n" +
     "    <table class=\"table table-condensed\">\n" +
     "        <thead>\n" +
     "        <tr>\n" +
@@ -7941,6 +8225,7 @@ angular.module("greenbus.views.template/point/pointsTable.html", []).run(["$temp
 angular.module("greenbus.views.template/property/propertiesTable.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("greenbus.views.template/property/propertiesTable.html",
     "<div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
+    "    <alert ng-repeat=\"alert in alerts\" type=\"{{alert.type}}\" close=\"closeAlert($index)\">{{alert.message}}</alert>\n" +
     "    <table class=\"table table-condensed\">\n" +
     "        <thead>\n" +
     "        <tr>\n" +
@@ -7958,6 +8243,17 @@ angular.module("greenbus.views.template/property/propertiesTable.html", []).run(
     "    </table>\n" +
     "</div>\n" +
     "");
+}]);
+
+angular.module("greenbus.views.template/schematic/equipmentSchematic.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/schematic/equipmentSchematic.html",
+    "<div class=\"gb-loading-container\">\n" +
+    "    <alert ng-repeat=\"alert in alerts\" type=\"{{alert.type}}\" close=\"closeAlert($index)\">{{alert.message}}</alert>\n" +
+    "\n" +
+    "    <div class=\"gb-equipment-schematic\" style=\"min-height: 300px;\"></div>\n" +
+    "    <div class=\"gb-loading-glass\" ng-show=\"loading\"></div>\n" +
+    "    <i ng-class=\"loading ? 'gb-loading-spinner fa fa-spinner fa-pulse' : ''\" ng-show=\"loading\"></i>\n" +
+    "</div>");
 }]);
 
 angular.module("greenbus.views.template/selection/selectAll.html", []).run(["$templateCache", function($templateCache) {

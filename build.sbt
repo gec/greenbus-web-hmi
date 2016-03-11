@@ -50,6 +50,8 @@ lazy val appPomExtra = {
 credentials += Credentials( Path.userHome / ".ivy2" / ".credentials")
 
 // for io.greenbus
+resolvers += "totalgrid-release" at "https://repo.totalgrid.org/artifactory/totalgrid-release"
+
 resolvers += "totalgrid-snapshot" at "https://repo.totalgrid.org/artifactory/totalgrid-snapshot"
 
 // for reef-client, msg-qpid
@@ -64,7 +66,7 @@ libraryDependencies ++= Seq(
   "org.webjars" % "requirejs" % "2.1.14-1",
   "org.webjars" % "webjars-play_2.10" % "2.3.0",
 //  "org.webjars" % "jquery" % "1.11.1",
-  "org.webjars" % "bootstrap" % "3.1.1-2",
+  "org.webjars" % "bootstrap" % "3.3.6",
   "org.webjars" % "angularjs" % "1.2.27",
   "org.webjars" % "angular-ui-bootstrap" % "0.12.0" exclude("org.webjars", "angularjs"),
   "org.webjars" % "angular-ui-utils" % "0.1.1" exclude("org.webjars", "angularjs"),
