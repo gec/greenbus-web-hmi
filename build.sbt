@@ -9,7 +9,7 @@ name := "greenbus-web-hmi"
 
 organization in ThisBuild := "io.greenbus"
 
-version := "3.0.0.M4-SNAPSHOT"
+version := "3.0.0"
 
 lazy val root = (project in file("."))
   .enablePlugins(PlayScala,SbtTwirl)
@@ -32,7 +32,7 @@ lazy val appPublishTo = { (v: String) =>
 }
 
 lazy val appPomExtra = {
-  <url>https://github.com/gec/coral.git</url>
+  <url>https://github.com/gec/greenbus-web-hmi.git</url>
     <licenses>
       <license>
         <name>Apache License, Version 2.0</name>
@@ -41,8 +41,8 @@ lazy val appPomExtra = {
       </license>
     </licenses>
     <scm>
-      <url>git@github.com:gec/coral.git</url>
-      <connection>scm:git:git@github.com:gec/coral.git</connection>
+      <url>git@github.com:gec/greenbus-web-hmi.git</url>
+      <connection>scm:git:git@github.com:gec/greenbus-web-hmi.git</connection>
     </scm>
 }
 
@@ -53,9 +53,6 @@ credentials += Credentials( Path.userHome / ".ivy2" / ".credentials")
 resolvers += "totalgrid-release" at "https://repo.totalgrid.org/artifactory/totalgrid-release"
 
 resolvers += "totalgrid-snapshot" at "https://repo.totalgrid.org/artifactory/totalgrid-snapshot"
-
-// for reef-client, msg-qpid
-resolvers += "totalgrid-private-snapshot" at "https://repo.totalgrid.org/artifactory/totalgrid-private-snapshot"
 
 resolvers += Resolver.mavenLocal
 
@@ -72,8 +69,8 @@ libraryDependencies ++= Seq(
   "org.webjars" % "angular-ui-utils" % "0.1.1" exclude("org.webjars", "angularjs"),
   "org.webjars" % "angular-ui-router" % "0.2.13" exclude("org.webjars", "angularjs"),
   "org.webjars" % "momentjs" % "2.10.2",
-  "io.greenbus" % "greenbus-client" % "3.0.0.M4-SNAPSHOT" withSources(),
-  "io.greenbus.web" %% "web-core" % "3.0.0.M4-SNAPSHOT" withSources(),
+  "io.greenbus" % "greenbus-client" % "3.0.0" withSources(),
+  "io.greenbus.web" %% "web-core" % "3.0.0" withSources(),
   "com.typesafe.slick" %% "slick" % "2.1.0",
   "com.typesafe.play" %% "play-slick" % "0.8.1"
 )
