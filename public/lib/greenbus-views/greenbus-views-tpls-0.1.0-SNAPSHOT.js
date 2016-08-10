@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-03-11
+ * Version: 0.1.0-SNAPSHOT - 2016-08-10
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/esses.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/schematic/equipmentSchematic.html","greenbus.views.template/selection/selectAll.html"]);
+angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/essesTable.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/schematic/equipmentSchematic.html","greenbus.views.template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -1975,21 +1975,18 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
  * Author: Flint O'Brien
  */
 
-angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.views.navigation', 'greenbus.views.rest']).
+angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.views.navigation', 'greenbus.views.rest', 'greenbus.views.subscription']).
   
-  controller( 'gbEssesController', ['$scope', '$filter', '$stateParams', 'rest', 'measurement', '$location', function( $scope, $filter, $stateParams, rest, measurement, $location) {
-    var PT = {
+  controller( 'gbEssesController', ['$scope', '$filter', '$stateParams', 'rest', 'measurement', 'subscription', '$location', function( $scope, $filter, $stateParams, rest, measurement, subscription, $location) {
+    var nameplateSubscriptionId,
+        PT = {
           Point: 'Point',
           Power: 'OutputPower',
-          EnergyCapacity: 'EnergyCapacity',
-          PowerCapacity: 'PowerCapacity',
           PercentSoc: '%SOC',
           Standby: 'Standby'
         },
         TypeToVarMap = {
           OutputPower: 'power',
-          EnergyCapacity: 'energyCapacity',
-          PowerCapacity: 'powerCapacity',
           '%SOC': 'percentSoc',
           Standby: 'standby'
         }
@@ -2012,7 +2009,8 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
     var equipment = navigationElement.equipmentChildren,
         equipmentIds = [],
-        equipmentIdMap = {}
+        equipmentIdMap = {},
+        cesMapByEquipmentId = {}
     equipment.forEach( function( eq) {
       equipmentIdMap[eq.id] = eq
       equipmentIds.push( eq.id)
@@ -2031,14 +2029,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       if ( typeof value == 'boolean' || isNaN( value) || !isFinite(value) || value === '')
         return value
 
-//      if( typeof value.indexOf === 'function') {
-//        var decimalIndex = value.indexOf('.')
-//        value = value.substring( 0, decimalIndex)
-//      } else {
-//        value = Math.round( parseFloat( value))
-//      }
       value = Math.round( parseFloat( value))
-
       return value
     }
 
@@ -2065,10 +2056,6 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
         case PT.PercentSoc:
           value = formatNumberNoDecimal( value);
           break;
-        case PT.EnergyCapacity:
-        case PT.PowerCapacity:
-          value = formatNumberValue( value) + ' ' + info.unit;
-          break;
         case PT.Power:
           value = formatNumberValue( value) + ' ' + info.unit;
           break;
@@ -2079,7 +2066,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
     // Return standby, charging, or discharging
     function getState( ess) {
-      if( ess.standby === 'OffAvailable' || ess.standby === 'true')
+      if( ess.standby.toLowerCase() === 'disabled' || ess.standby === 'OffAvailable' || ess.standby === 'true')
         return 'standby';
       else if( typeof ess.power == 'boolean')
         return ess.power ? 'charging' : 'discharging';
@@ -2111,7 +2098,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       }
     }
 
-    var POINT_TYPES =  [PT.PercentSoc, PT.Power, PT.Standby, PT.EnergyCapacity, PT.PowerCapacity]
+    var POINT_TYPES =  [PT.PercentSoc, PT.Power, PT.Standby]
     function getInterestingType( types) {
       for( var index = types.length-1; index >= 0; index--) {
         var typ = types[index]
@@ -2177,27 +2164,27 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
       pointsUrl = '/models/1/points?' + equipmentIdsQueryParams + '&' + pointTypesQueryParams
       rest.get( pointsUrl, 'points', $scope, function( data) {
-        var sampleData = {
-          'e57170fd-2a13-4420-97ab-d1c0921cf60d': [
-            {
-              'name': 'MG1.CES1.ModeStndby',
-              'id': 'fa9bd9a1-5ad1-4c20-b019-261cb69d0a39',
-              'types': [PT.Point, PT.Standby]
-            },
-            {
-              'name': 'MG1.CES1.CapacitykWh',
-              'id': '585b3e36-1826-4d7b-b538-d2bb71451d76',
-              'types': [PT.EnergyCapacity, PT.Point]
-            },
-            {
-              'name': 'MG1.CES1.ChgDischgRate',
-              'id': 'ec7d6f06-e627-44d2-9bb9-530541fdcdfd',
-              'types': [PT.Power, PT.Point]
-            }
-          ]}
+        //var sampleData = {
+        //  'e57170fd-2a13-4420-97ab-d1c0921cf60d': [
+        //    {
+        //      'name': 'MG1.CES1.ModeStndby',
+        //      'id': 'fa9bd9a1-5ad1-4c20-b019-261cb69d0a39',
+        //      'types': [PT.Point, PT.Standby]
+        //    },
+        //    {
+        //      'name': 'MG1.CES1.CapacitykWh',
+        //      'id': '585b3e36-1826-4d7b-b538-d2bb71451d76',
+        //      'types': [PT.EnergyCapacity, PT.Point]
+        //    },
+        //    {
+        //      'name': 'MG1.CES1.ChgDischgRate',
+        //      'id': 'ec7d6f06-e627-44d2-9bb9-530541fdcdfd',
+        //      'types': [PT.Power, PT.Point]
+        //    }
+        //  ]}
 
         equipmentIds.forEach( function( eqId) {
-          var point,
+          var point, ces,
               points = data[eqId],
               cesIndex = $scope.ceses.length
 
@@ -2217,16 +2204,92 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
               }
 
             })
-            $scope.ceses.push( makeCes( equipmentIdMap[eqId]))
+            ces = makeCes( equipmentIdMap[eqId])
+            cesMapByEquipmentId[eqId] = ces
+            $scope.ceses.push( ces)
           } else {
             console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points did not return UUID=' + eqId)
           }
         })
 
         measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
+        subscribeToEquipmentNameplates()
       })
 
     }
+
+
+    function formatCapacity( capacity) {
+      var result = { energy: '', power: ''}
+      if( capacity.hasOwnProperty( 'energy'))
+        result.energy = formatNumberValue( capacity.energy)
+      if( capacity.hasOwnProperty( 'power'))
+        result.power = formatNumberValue( capacity.power)
+      return result
+    }
+
+    function updateNameplateProperty( property) {
+      var value,
+          ces = cesMapByEquipmentId[property.entityId]
+      if( ces) {
+        value = property.value
+        if( value.hasOwnProperty('capacity')) {
+          ces.capacity = formatCapacity( value.capacity)
+        }
+      }
+    }
+
+    function notifyNameplateProperty( notificationProperty) {
+      var property = notificationProperty.value
+
+      if( property.key === 'nameplate') {
+        var ces = cesMapByEquipmentId[property.entityId]
+        if( ces) {
+          switch( notificationProperty.operation) {
+            case 'ADDED':
+            case 'MODIFIED':
+              updateNameplateProperty( property)
+              break;
+            case 'REMOVED':
+              ces.capacity = {}
+              console.error( 'gbEssesController: required property, "nameplate", was REMOVED from the model for ' + equipmentIdMap[property.entityId].name)
+          }
+        } else {
+          console.error( 'gbEssesController: got notification of "nameplate" property for unknown equipmentId: ' + property.entityId)
+        }
+      }
+    }
+
+    function subscribeToEquipmentNameplates() {
+
+      var json = {
+        name: 'SubscribeToProperties',
+        entityIds:  equipmentIds,
+        keys: ['nameplate']
+      }
+
+      nameplateSubscriptionId = subscription.subscribe( json, $scope,
+        function( subscriptionId, type, data) {
+
+          switch( type) {
+            case 'notification.property':
+              notifyNameplateProperty( data)
+              break
+            case 'properties':
+              data.forEach(updateNameplateProperty)
+              break
+            default:
+              console.error( 'gbPropertiesTableController: unknown type "' + type + '" from subscription notification')
+          }
+          $scope.$digest()
+        },
+        function(error, message) {
+          console.error('gbPropertiesTableController.subscribe ' + error + ', ' + JSON.stringify( message))
+          $scope.alerts = [{ type: 'danger', message: error}]
+        }
+      )
+    }
+
 
     //var eqTypes = rest.queryParameterFromArrayOrString( 'eqTypes', ['ESS'])
     //var pointTypes = rest.queryParameterFromArrayOrString( 'pointTypes', POINT_TYPES)
@@ -2237,14 +2300,14 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
   }]).
 
 
-  directive( 'gbEsses', function(){
+  directive( 'gbEssesTable', function(){
     return {
       restrict: 'E', // Element name
       // The template HTML will replace the directive.
       replace: true,
       transclude: true,
       scope: true,
-      templateUrl: 'greenbus.views.template/ess/esses.html',
+      templateUrl: 'greenbus.views.template/ess/essesTable.html',
       controller: 'gbEssesController'
     }
   }).
@@ -5986,7 +6049,7 @@ angular.module('greenbus.views.property', [ 'ui.router', 'greenbus.views.rest', 
 
         var json = {
           name: 'SubscribeToProperties',
-          entityId:  equipmentId
+          entityIds:  [equipmentId]
         }
 
         subscriptionId = subscription.subscribe( json, $scope,
@@ -6589,7 +6652,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       var subscriptionId,
           json = {
             name: 'SubscribeToProperties',
-            entityId:  equipmentId,
+            entityIds:  [equipmentId],
             keys: [exports.KEY_SCHEMATIC]
           }
 
@@ -7769,8 +7832,8 @@ angular.module("greenbus.views.template/equipment/equipment.html", []).run(["$te
     "");
 }]);
 
-angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("greenbus.views.template/ess/esses.html",
+angular.module("greenbus.views.template/ess/essesTable.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/ess/essesTable.html",
     "<div>\n" +
     "    <div class=\"row\">\n" +
     "        <div class=\"col-md-5\">\n" +
@@ -7798,8 +7861,8 @@ angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCach
     "                <th><a href=\"\" ng-click=\"sortColumn = 'state'; reverse=!reverse\">State</a></th>\n" +
     "                <th title=\"State of Charge %\" style=\"text-align: center\">SOC %</th>\n" +
     "                <th></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'powerCapacity'; reverse=!reverse\">Power</a></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'energyCapacity'; reverse=!reverse\">Energy</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'powerCapacity'; reverse=!reverse\">Power (kW)</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'energyCapacity'; reverse=!reverse\">Energy (kWh)</a></th>\n" +
     "            </tr>\n" +
     "            </thead>\n" +
     "            <tbody>\n" +
@@ -7815,8 +7878,8 @@ angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCach
     "                    </div>\n" +
     "                </td>\n" +
     "                <td>{{ces.percentSoc}}%</td>\n" +
-    "                <td class=\"gb-cell-highlight gb-cell-highlight-left\">{{ces.powerCapacity}}</td>\n" +
-    "                <td class=\"gb-cell-highlight gb-cell-highlight-right\">{{ces.energyCapacity}}</td>\n" +
+    "                <td class=\"gb-cell-highlight gb-cell-highlight-left\">{{ces.capacity.power}}</td>\n" +
+    "                <td class=\"gb-cell-highlight gb-cell-highlight-right\">{{ces.capacity.energy}}</td>\n" +
     "            </tr>\n" +
     "            </tbody>\n" +
     "        </table>\n" +

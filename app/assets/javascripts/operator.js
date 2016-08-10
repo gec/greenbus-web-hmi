@@ -70,7 +70,7 @@ define([
           .state('microgrids.equipmentsId',   { url: "/equipments/:id",  params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
           .state('microgrids.pvs',            { url: "/pvs",             params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
           .state('microgrids.pvsId',          { url: "/pvs/:id",         params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
-          .state('microgrids.esses',          { url: "/esses",           params: {navigationElement: null}, template: "<gb-esses></gb-esses>"})
+          .state('microgrids.esses',          { url: "/esses",           params: {navigationElement: null}, template: "<gb-esses-table></gb-esses-table>"})
           .state('microgrids.essesId',        { url: "/esses/:id",       params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
           .state('microgrids.generations',    { url: "/generations",     params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
           .state('microgrids.generationsId',  { url: "/generations/:id", params: {navigationElement: null}, template: "<gb-equipment></gb-equipment>"})
