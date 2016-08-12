@@ -20,9 +20,7 @@
 
 import io.greenbus.web.config.dal.InitialDB
 import io.greenbus.msg.Session
-import io.greenbus.web.connection.ConnectionManager.WebSocketChannels
-import io.greenbus.web.connection.{ClientServiceFactoryDefault, ConnectionStatus, WebSocketPushActorFactory, ConnectionManager}
-import io.greenbus.web.websocket.{WebSocketPushActor, WebSocketConsumerImpl}
+import io.greenbus.web.connection.{ClientServiceFactoryDefault, ConnectionManager}
 import play.api._
 import controllers.Application
 import play.api.Application
@@ -38,19 +36,6 @@ import play.api.mvc.{WithFilters, Result, RequestHeader, Filter}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
-
-object ClientPushActorFactory extends WebSocketPushActorFactory{
-  import ConnectionStatus._
-  import ConnectionManager._
-
-  def makeChildActor( parentContext: ActorContext, actorName: String, connectionStatus: ConnectionStatus, session: Session): WebSocketChannels = {
-    // Create a pushChannel that the new actor will use for push
-    val (enumerator, pushChannel) = Concurrent.broadcast[JsValue]
-    val actorRef = parentContext.actorOf( Props( new WebSocketPushActor( connectionStatus, session, pushChannel, ClientServiceFactoryDefault)) /*, name = actorName*/) // Getting two with the same name
-    val iteratee = WebSocketConsumerImpl.getConsumer( actorRef)
-    WebSocketChannels( iteratee, enumerator)
-  }
-}
 
 /**
  * Allow CORS - Cross Origin Resource Sharing
@@ -79,7 +64,7 @@ object CorsFilter extends Filter {
 object Global extends WithFilters(CorsFilter) with GlobalSettings {
   import ConnectionManager.DefaultConnectionManagerServicesFactory
 
-  lazy val connectionManager = Akka.system.actorOf(Props( new ConnectionManager( DefaultConnectionManagerServicesFactory, ClientPushActorFactory)), "ConnectionManager")
+  lazy val connectionManager = Akka.system.actorOf(Props( new ConnectionManager( DefaultConnectionManagerServicesFactory)), "ConnectionManager")
 
   override def onStart(app: Application) {
     super.onStart(app)
