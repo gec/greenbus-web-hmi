@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-08-10
+ * Version: 0.1.0-SNAPSHOT - 2016-08-16
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -6787,6 +6787,46 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       return symbolEl
     }
 
+
+    /**
+     * Update the SVG element to scale to fit inside parent div.
+     *
+     * @param rootElement
+     */
+    exports.updateSvgElementAttributesToScaleToFitParentDiv = function( rootElement) {
+      // Convert:
+      //   <svg width="1680" height="800" >...</svg>
+      // To:
+      //   <svg width="100%" height="auto"
+      //        viewBox="0 0 1680 800"
+      //        preserveAspectRatio="xMidYMid meet"
+      //   >...</svg>
+
+      var svg = $(rootElement).filter(function(){return this.nodeType===1;}) // fitler out '<?xml version="1.0"?>'
+      if (svg.length === 0)
+        return  // TODO: handle no SVG error case
+
+      // IMPORTANT - jQuery .attr() ignores case. Need case sensitive Javascript .getAttribute().
+
+      var w, h,
+          width = svg.attr('width'),
+          height = svg.attr('height'),
+          viewBox = svg[0].getAttribute('viewBox')
+      console.log( 'gbSchematicController: Updating svg attributes to auto-size and fit in div. Initial svg attributes: width="' + width + '" height="' + height + '" viewBox="' + viewBox + '"')
+
+      if( viewBox === null || viewBox === undefined || viewBox === '') {
+        w = width === undefined || width.indexOf('%') >= 0 ? 1680 : width
+        h = height === undefined || height.indexOf('%') >= 0 ? 800 : height
+        viewBox = '0 0 ' + w + ' ' + h
+        console.log( 'gbSchematicController: Setting viewBox="' + viewBox + '"')
+        svg[0].setAttribute('viewBox', viewBox) // setAttribute for case sensitive
+      } // else assume the viewBox is setup correctly
+
+      svg.attr('width', '100%')
+      svg.attr('height', 'auto')
+      svg[0].setAttribute('preserveAspectRatio', 'xMidYMid meet')  // setAttribute for case sensitive
+    }
+
     /**
      * Ensure quality symbols exist in first defs element in schematic.
      *
@@ -7128,6 +7168,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
 
             elemChild = elem.find('.gb-equipment-schematic')
             svg = $.parseHTML( newValue)
+            schematic.updateSvgElementAttributesToScaleToFitParentDiv( svg)
             schematic.ensureQualitySymbolsInDefs( svg)
             elemChild.prepend(svg)
             symbols = schematic.parseElements( elemChild)
