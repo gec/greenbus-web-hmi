@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-08-16
+ * Version: 0.1.0-SNAPSHOT - 2016-08-17
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -6823,7 +6823,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       } // else assume the viewBox is setup correctly
 
       svg.attr('width', '100%')
-      svg.attr('height', 'auto')
+      svg.attr('height', '100%')
       svg[0].setAttribute('preserveAspectRatio', 'xMidYMid meet')  // setAttribute for case sensitive
     }
 
@@ -7118,8 +7118,6 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
       //      if( point ) {
       //        // TODO: see measurement.getCommandsForPoints
       //        point.commands = data[pointId]
-      //        //point.commandTypes = getCommandTypes( point.commands).toLowerCase()
-      //        console.log('commandTypes: ' + point.commandTypes)
       //      }
       //      else
       //        console.error( 'gbSchematicController.getCommandsForPoints Unknown point ID ' + pointId)
