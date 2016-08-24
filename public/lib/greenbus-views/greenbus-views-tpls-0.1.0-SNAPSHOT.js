@@ -2,11 +2,11 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-08-17
+ * Version: 0.1.0-SNAPSHOT - 2016-08-24
  * License: Apache-2.0
  */
-angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
-angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/essesTable.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/schematic/equipmentSchematic.html","greenbus.views.template/selection/selectAll.html"]);
+angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.pager","greenbus.views.paging","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
+angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/essesTable.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/pager/pager.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/schematic/equipmentSchematic.html","greenbus.views.template/selection/selectAll.html"]);
 /**
 * Copyright 2013-2014 Green Energy Corp.
 *
@@ -68,6 +68,532 @@ angular.module('greenbus.views.assert', []).
     return exports
 
   }]);
+
+var GBSubscriptionCache, GBSubscriptionCacheAction;
+
+GBSubscriptionCacheAction = {
+  NONE: 0,
+  UPDATE: 1,
+  INSERT: 2,
+  REMOVE: 3,
+  MOVE: 4,
+  TRIM: 5
+};
+
+GBSubscriptionCache = (function() {
+
+  /*
+    @param cacheSize -   
+    @param items -
+   */
+  function GBSubscriptionCache(cacheSize, items, sortFn) {
+    var item, j, len, ref;
+    this.cacheSize = cacheSize;
+    this.sortFn = sortFn;
+    this.itemStore = [];
+    this.itemIdMap = {};
+    if (items) {
+      this.itemStore = items.slice(0);
+      if (this.sortFn != null) {
+        this.itemStore.sort(this.sortFn);
+      }
+      if (this.itemStore.length > this.cacheSize) {
+        this.itemStore = this.itemStore.slice(0, this.cacheSize);
+      }
+      ref = this.itemStore;
+      for (j = 0, len = ref.length; j < len; j++) {
+        item = ref[j];
+        this.itemIdMap[item.id] = item;
+      }
+    }
+  }
+
+  GBSubscriptionCache.prototype.onMessage = function(item) {
+    var action, actions, count, i, isArray, j, len, trimmed;
+    actions = [];
+    if (!item) {
+      return actions;
+    }
+    isArray = angular.isArray(item);
+    if (isArray) {
+      switch (item.length) {
+        case 0:
+          return actions;
+        case 1:
+          isArray = false;
+          item = item[0];
+      }
+    }
+    if (isArray) {
+      console.log('GBSubscriptionCache onMessage length=' + item.length);
+      actions = (function() {
+        var j, results;
+        results = [];
+        for (j = item.length - 1; j >= 0; j += -1) {
+          i = item[j];
+          results.push(this.updateOrInsert(i));
+        }
+        return results;
+      }).call(this);
+    } else {
+      action = this.updateOrInsert(item);
+      if (action.type !== GBSubscriptionCacheAction.NONE) {
+        actions[actions.length] = action;
+      }
+    }
+    if (this.itemStore.length > this.cacheSize) {
+      count = this.itemStore.length - this.cacheSize;
+      trimmed = this.itemStore.splice(this.cacheSize, count);
+      actions[actions.length] = {
+        type: GBSubscriptionCacheAction.TRIM,
+        at: this.cacheSize,
+        count: count,
+        items: trimmed
+      };
+      for (j = 0, len = trimmed.length; j < len; j++) {
+        item = trimmed[j];
+        delete this.itemIdMap[item.id];
+      }
+    }
+    return actions;
+  };
+
+  GBSubscriptionCache.prototype.updateOrInsert = function(item) {
+    var existing;
+    existing = this.itemIdMap[item.id];
+    if (existing) {
+      return this.update(existing, item);
+    } else {
+      return this.insert(item);
+    }
+  };
+
+  GBSubscriptionCache.prototype.itemAboveIsEarlier = function(item, index) {
+    return index > 0 && this.itemStore[index - 1].time < item.time;
+  };
+
+  GBSubscriptionCache.prototype.itemBelowIsLater = function(item, index) {
+    return index < this.itemStore.length - 1 && this.itemStore[index + 1].time > item.time;
+  };
+
+  GBSubscriptionCache.prototype.itemIsOutOfOrder = function(item, index) {
+    return this.itemAboveIsEarlier(item, index) || this.itemBelowIsLater(item, index);
+  };
+
+  GBSubscriptionCache.prototype.shouldRemoveItemOnUpdate = function(item) {
+    return false;
+  };
+
+  GBSubscriptionCache.prototype.convertInsertActionToIncludeRemove = function(item, index, action) {
+    if (action.type === GBSubscriptionCacheAction.INSERT) {
+      return {
+        type: GBSubscriptionCacheAction.MOVE,
+        from: index,
+        to: action.at,
+        item: item
+      };
+    } else {
+      return {
+        type: GBSubscriptionCacheAction.REMOVE,
+        from: index,
+        item: item
+      };
+    }
+  };
+
+  GBSubscriptionCache.prototype.update = function(item, update) {
+    var action, index;
+    angular.extend(item, update);
+    index = this.itemStore.indexOf(item);
+    if (index >= 0) {
+      if (this.shouldRemoveItemOnUpdate(item)) {
+        this.itemStore.splice(index, 1);
+        return {
+          type: GBSubscriptionCacheAction.REMOVE,
+          from: index,
+          item: item
+        };
+      } else if (this.itemIsOutOfOrder(item, index)) {
+        this.itemStore.splice(index, 1);
+        action = this.insert(item);
+        return this.convertInsertActionToIncludeRemove(item, index, action);
+      } else {
+        return {
+          type: GBSubscriptionCacheAction.UPDATE,
+          at: index,
+          item: item
+        };
+      }
+    } else {
+      return {
+        type: GBSubscriptionCacheAction.NONE,
+        item: item
+      };
+    }
+  };
+
+  GBSubscriptionCache.prototype.insert = function(item) {
+    var i, insertAt;
+    insertAt = -1;
+    if (this.itemStore.length === 0 || (typeof this.sortFn === "function" ? this.sortFn(item, this.itemStore[0]) : void 0) <= 0) {
+      this.itemStore.unshift(item);
+      insertAt = 0;
+    } else {
+      i = 1;
+      while (true) {
+        if (i >= this.itemStore.length) {
+          if (this.itemStore.length < this.cacheSize) {
+            this.itemStore[this.itemStore.length] = item;
+            insertAt = this.itemStore.length - 1;
+          }
+          break;
+        } else if ((typeof this.sortFn === "function" ? this.sortFn(item, this.itemStore[i]) : void 0) <= 0) {
+          this.itemStore.splice(i, 0, item);
+          insertAt = i;
+          break;
+        } else {
+          i++;
+        }
+      }
+    }
+    if (insertAt >= 0) {
+      this.itemIdMap[item.id] = item;
+      return {
+        type: GBSubscriptionCacheAction.INSERT,
+        at: insertAt,
+        item: item
+      };
+    } else {
+      return {
+        type: GBSubscriptionCacheAction.NONE,
+        item: item
+      };
+    }
+  };
+
+  GBSubscriptionCache.prototype.indexOfId = function(id) {
+    var index, item, j, len, ref;
+    ref = this.itemStore;
+    for (index = j = 0, len = ref.length; j < len; index = ++j) {
+      item = ref[index];
+      if (item.id === id) {
+        return index;
+      }
+    }
+    return -1;
+  };
+
+  GBSubscriptionCache.prototype.getItemById = function(id) {
+    return this.itemIdMap[id];
+  };
+
+  return GBSubscriptionCache;
+
+})();
+
+//# sourceMappingURL=GBSubscriptionCache.js.map
+
+var GBSubscriptionView, GBSubscriptionViewState,
+  bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+  hasProp = {}.hasOwnProperty;
+
+GBSubscriptionViewState = {
+  NO_ITEMS: 'no-items',
+  FIRST_PAGE: 'first-page',
+  PAGING_NEXT: 'paging-next',
+  PAGING_PREVIOUS: 'paging-previous',
+  PAGED: 'paged',
+  LAST_PAGE: 'last-page'
+};
+
+
+/*
+
+  Manage a set of items as subscription messages come in.
+
+  For paging, we could be paging inside the cache or past the end of the cache.
+
+  View  Cache
+  3     3
+  2     2
+        1
+
+  @param viewSize - Maximum number of items in view (aka. page)
+  @param cacheSize - Maximum number of items in cache
+  @param items - if supplied, this array will be update and sorted with onMessage calls.
+  @param sortFn - Optional sorting function
+  @constructor
+ */
+
+GBSubscriptionView = (function(superClass) {
+  extend(GBSubscriptionView, superClass);
+
+  function GBSubscriptionView(viewSize, cacheSize, items, sortFn) {
+    this.viewSize = viewSize;
+    this.cacheSize = cacheSize;
+    this.sortFn = sortFn;
+    this.pageFailure = bind(this.pageFailure, this);
+    this.pageSuccess = bind(this.pageSuccess, this);
+    if (this.cacheSize == null) {
+      this.cacheSize = this.viewSize;
+    }
+    GBSubscriptionView.__super__.constructor.call(this, this.cacheSize, items, this.sortFn);
+    this.items = this.itemStore.slice(0, this.viewSize);
+    if (this.items.length > this.viewSize) {
+      this.items.splice(this.viewSize, this.items.length - this.viewSize);
+    }
+    this.state = GBSubscriptionViewState.FIRST_PAGE;
+    this.pageCacheOffset = 0;
+    this.backgrounded = false;
+    this.pagePending = void 0;
+    this.previousPageCache = void 0;
+  }
+
+  GBSubscriptionView.prototype.onMessage = function(item) {
+    var action, actions, acts, removed, removedItems;
+    removedItems = [];
+    actions = GBSubscriptionView.__super__.onMessage.call(this, item);
+    if (this.pageCacheOffset >= 0) {
+      acts = (function() {
+        var i, len, results;
+        results = [];
+        for (i = 0, len = actions.length; i < len; i++) {
+          action = actions[i];
+          results.push(this.act(action));
+        }
+        return results;
+      }).call(this);
+      removedItems = (function() {
+        var i, len, results;
+        results = [];
+        for (i = 0, len = acts.length; i < len; i++) {
+          removed = acts[i];
+          if (removed) {
+            results.push(removed);
+          }
+        }
+        return results;
+      })();
+      if (this.items.length > this.viewSize) {
+        removedItems = removedItems.concat(this.items.splice(this.viewSize, this.items.length - this.viewSize));
+      }
+    }
+    return removedItems;
+  };
+
+  GBSubscriptionView.prototype.act = function(action) {
+    switch (action.type) {
+      case GBSubscriptionCacheAction.UPDATE:
+        return this.actionUpdate(action);
+      case GBSubscriptionCacheAction.INSERT:
+        return this.actionInsert(action.item, action.at);
+      case GBSubscriptionCacheAction.REMOVE:
+        return this.actionRemove(action.item, action.from);
+      case GBSubscriptionCacheAction.MOVE:
+        return this.actionMove(action);
+      case GBSubscriptionCacheAction.TRIM:
+        return this.actionTrim(action);
+    }
+  };
+
+  GBSubscriptionView.prototype.actionUpdate = function(action) {};
+
+  GBSubscriptionView.prototype.actionMove = function(action) {
+    this.actionRemove(action.item, action.from);
+    return this.actionInsert(action.item, action.to);
+  };
+
+  GBSubscriptionView.prototype.actionTrim = function(action) {
+    var trimAt;
+    trimAt = action.at - this.pageCacheOffset;
+    if (trimAt <= 0) {
+      return this.pageCacheOffset = -1;
+    }
+  };
+
+  GBSubscriptionView.prototype.actionRemove = function(item, from) {
+    var removeAt, removed;
+    removed = void 0;
+    removeAt = from - this.pageCacheOffset;
+    if (removeAt >= 0 && removeAt < this.viewSize) {
+      removed = this.items[removeAt];
+      this.items.splice(removeAt, 1);
+    } else if (removeAt < 0) {
+      this.pageCacheOffset -= 1;
+    }
+    return removed;
+  };
+
+  GBSubscriptionView.prototype.actionInsert = function(item, insertAt) {
+    insertAt = insertAt - this.pageCacheOffset;
+    if ((this.pageCacheOffset === 0 && insertAt === 0) || (insertAt > 0 && insertAt < this.viewSize)) {
+      this.items.splice(insertAt, 0, item);
+    } else if (insertAt <= 0) {
+      this.pageCacheOffset += 1;
+    }
+    return void 0;
+  };
+
+  GBSubscriptionView.prototype.background = function() {
+    if (!this.backgrounded) {
+      this.backgrounded = true;
+      return this.items.splice(0, this.items.length);
+    }
+  };
+
+  GBSubscriptionView.prototype.foreground = function() {
+    if (this.backgrounded) {
+      this.replaceItems(this.itemStore.slice(0, this.viewSize));
+      return this.backgrounded = false;
+    }
+  };
+
+  GBSubscriptionView.prototype.lastPageOrPaged = function() {
+    if (this.items.length < this.viewSize) {
+      return GBSubscriptionViewState.LAST_PAGE;
+    } else {
+      return GBSubscriptionViewState.PAGED;
+    }
+  };
+
+  GBSubscriptionView.prototype.updateState = function() {
+    return this.state = (function() {
+      switch (false) {
+        case this.items.length !== 0:
+          return GBSubscriptionViewState.NO_ITEMS;
+        case this.pageCacheOffset === 0:
+          return this.lastPageOrPaged();
+        default:
+          return GBSubscriptionViewState.FIRST_PAGE;
+      }
+    }).call(this);
+  };
+
+  GBSubscriptionView.prototype.pageSuccess = function(items) {
+    var oldItems, ref, ref1, ref2, ref3;
+    switch ((ref = this.pagePending) != null ? ref.direction : void 0) {
+      case 'next':
+        if (this.pagePending.cache) {
+          items = this.pagePending.cache.concat(items);
+        }
+        this.previousPageCache = this.items.slice(0);
+        this.replaceItems(items);
+        if (this.sortFn != null) {
+          this.items.sort(this.sortFn);
+        }
+        this.pageCacheOffset = -1;
+        if (items.length > 0) {
+          this.onMessage(items, this.pagePending.direction);
+          this.pageCacheOffset = this.indexOfId(this.items[0].id);
+        }
+        this.updateState();
+        if ((ref1 = this.pagePending) != null ? ref1.notify : void 0) {
+          this.pagePending.notify(this.state, this.previousPageCache);
+        }
+        return this.pagePending = void 0;
+      case 'previous':
+        oldItems = this.items.slice(0);
+        this.replaceItems(items);
+        if (this.sortFn != null) {
+          this.items.sort(this.sortFn);
+        }
+        if (items.length > 0) {
+          this.onMessage(items, this.pagePending.direction);
+          this.pageCacheOffset = this.indexOfId(this.items[0].id);
+        } else {
+          this.pageCacheOffset = -1;
+        }
+        this.updateState();
+        if ((ref2 = this.pagePending) != null ? ref2.notify : void 0) {
+          this.pagePending.notify(this.state, oldItems);
+        }
+        return this.pagePending = void 0;
+      default:
+        return console.log('GBSubscriptionView.pageSuccess but pagePending is ' + ((ref3 = this.pagePending) != null ? ref3.direction : void 0));
+    }
+  };
+
+  GBSubscriptionView.prototype.pageFailure = function(items) {};
+
+  GBSubscriptionView.prototype.pageNext = function(pageRest, notify) {
+    var limit, nextPageOffset;
+    if (this.pagePending) {
+      return 'pastPending';
+    }
+    switch (false) {
+      case !(this.pageCacheOffset < 0):
+        this.pagePending = {
+          direction: 'next',
+          notify: notify
+        };
+        pageRest.pageNext(this.items[this.items.length - 1].id, this.viewSize, this.pageSuccess, this.pageFailure);
+        return this.state = GBSubscriptionViewState.PAGING_NEXT;
+      case !(this.pageCacheOffset + 2 * this.viewSize <= this.itemStore.length):
+        this.pageCacheOffset += this.viewSize;
+        this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
+        return this.state = GBSubscriptionViewState.PAGED;
+      default:
+        nextPageOffset = this.pageCacheOffset + this.viewSize;
+        this.pagePending = {
+          direction: 'next',
+          notify: notify,
+          cache: this.itemStore.slice(nextPageOffset, nextPageOffset + this.viewSize)
+        };
+        limit = this.viewSize - this.pagePending.cache.length;
+        pageRest.pageNext(this.items[this.items.length - 1].id, limit, this.pageSuccess, this.pageFailure);
+        return this.state = GBSubscriptionViewState.PAGING_NEXT;
+    }
+  };
+
+  GBSubscriptionView.prototype.pagePrevious = function(pageRest, notify) {
+    if (this.pagePending) {
+      return 'pastPending';
+    }
+    switch (false) {
+      case !(this.pageCacheOffset < 0 && this.items.length === 0):
+        this.replaceItems(this.previousPageCache);
+        this.previousPageCache = void 0;
+        this.pageCacheOffset = this.indexOfId(this.items[0].id);
+        return this.updateState();
+      case !(this.pageCacheOffset < 0):
+        this.pagePending = {
+          direction: 'previous',
+          notify: notify
+        };
+        pageRest.pagePrevious(this.items[0].id, this.viewSize, this.pageSuccess, this.pageFailure);
+        return this.state = GBSubscriptionViewState.PAGING_PREVIOUS;
+      case this.pageCacheOffset !== 0:
+        return this.state = GBSubscriptionViewState.FIRST_PAGE;
+      default:
+        this.pageCacheOffset -= this.viewSize;
+        if (this.pageCacheOffset < 0) {
+          this.pageCacheOffset = 0;
+        }
+        this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
+        return this.state = this.pageCacheOffset > 0 ? GBSubscriptionViewState.PAGED : GBSubscriptionViewState.FIRST_PAGE;
+    }
+  };
+
+  GBSubscriptionView.prototype.pageFirst = function() {
+    this.pagePending = void 0;
+    this.pageCacheOffset = 0;
+    this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
+    return this.updateState();
+  };
+
+  GBSubscriptionView.prototype.replaceItems = function(source) {
+    var args;
+    this.items.splice(0, this.items.length);
+    args = [0, 0].concat(source);
+    return Array.prototype.splice.apply(this.items, args);
+  };
+
+  return GBSubscriptionView;
+
+})(GBSubscriptionCache);
+
+//# sourceMappingURL=GBSubscriptionView.js.map
 
 /**
 * Copyright 2013-2014 Green Energy Corp.
@@ -1854,10 +2380,10 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
 
     /**
      *
-     * @param collapsePointsToArray If true, poinrs will always be returned as a list.
+     * @param collapsePointsToArray If true, points will always be returned as a list.
      * @returns {Promise}
      */
-    function getCurrentPoints( collapsePointsToArray) {
+    function getPoints( collapsePointsToArray, limit, startAfterId, ascending) {
       var navigationElement = $stateParams.navigationElement
 
       // Initialized from URL or menu click or both
@@ -1866,7 +2392,8 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
         return $q.when( [])
 
       var equipmentIdsQueryParams = getEquipmentIdsQueryParams( navigationElement),
-          depth = rest.queryParameterFromArrayOrString('depth', '9999')
+          depth = rest.queryParameterFromArrayOrString('depth', '9999'),
+          startAfter = rest.queryParameterFromArrayOrString('startAfterId', startAfterId)
 
 
       var delimeter = '?'
@@ -1876,8 +2403,16 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
         url += delimeter + equipmentIdsQueryParams
         delimeter = '&'
       }
-      if( depth.length > 0 )
+      if( depth.length > 0 ) {
         url += delimeter + depth
+        delimeter = '&'
+      }
+      if( limit !== undefined && limit > 0)
+        url += delimeter + 'limit=' + limit
+      if( startAfter.length > 0 )
+        url += delimeter + startAfter
+      if( ascending === false) // don't add if undefined or null!
+        url += delimeter + 'ascending=false'
 
       return rest.get(url).then(
         function( response) {
@@ -1908,7 +2443,7 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
      * Public API
      */
     return {
-      getCurrentPoints: getCurrentPoints
+      getPoints: getPoints
     }
   }]).
 
@@ -1918,6 +2453,7 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
           microgridId       = $stateParams.microgridId,
           navigationElement = $stateParams.navigationElement
 
+      $scope.pageSize = Number( $scope.pageSize || 100)
       $scope.shortName = 'loading...'
       $scope.tabs = {
         measurements: false,
@@ -1939,14 +2475,16 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
         points: true
       }
 
-      $scope.pointsPromise = equipment.getCurrentPoints( true)
+      $scope.pointsPromise = equipment.getPoints( true, $scope.pageSize)
     }
   ]).
 
   directive('gbEquipment', function() {
     return {
       restrict:    'E', // Element name
-      scope:       true,
+      scope: {
+        pageSize: '=?'
+      },
       templateUrl: 'greenbus.views.template/equipment/equipment.html',
       controller:  'gbEquipmentController'
     }
@@ -2558,9 +3096,9 @@ GBEvents.prototype.sortByTime = function() {
  *
  */
 
+function GreenbusViewsEventSortByTime( a, b) { return b.time - a.time }
 
-
-angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.subscription']).
+angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.subscription', 'greenbus.views.pager']).
 
   factory('alarmRest', ['rest', function( rest) {
 
@@ -2829,11 +3367,10 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
   controller('gbAlarmsController', ['$scope', '$attrs', 'rest', 'subscription', 'alarmWorkflow', 'alarmRest', '$timeout', function( $scope, $attrs, rest, subscription, alarmWorkflow, alarmRest, $timeout) {
     $scope.loading = true
     $scope.limit = Number( $attrs.limit || 20);
-    var subscriptionView = new AlarmSubscriptionView( $scope.limit, $scope.limit * 4)
+    var subscriptionView = new GBAlarmSubscriptionView( $scope.limit, $scope.limit * 4, undefined, GreenbusViewsEventSortByTime)
     $scope.alarms = subscriptionView.items
     // Paging
-    $scope.pageState = SubscriptionViewState.CURRENT
-    $scope.lastPage = false
+    $scope.pageState = GBSubscriptionViewState.FIRST_PAGE
     $scope.newItems = undefined
     // Alarm workflow
     $scope.selectAllState = 0
@@ -2845,12 +3382,11 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     //
     function updatePageState( state) {
       $scope.pageState = state
-      if( state === SubscriptionViewState.CURRENT)
+      if( state === GBSubscriptionViewState.FIRST_PAGE)
         $scope.newItems = undefined
     }
-    function pageNotify( state, pageCacheOffset, lastPage, oldItems) {
+    function pageNotify( state, oldItems) {
       updatePageState( state)
-      $scope.lastPage = lastPage
       oldItems.forEach( function( i) {
         if( i._checked)
           $scope.selectItem( i, 0) // 0: unchecked. Selection needs to decrement its select count.
@@ -2859,7 +3395,6 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     $scope.pageFirst = function() {
       var state = subscriptionView.pageFirst()
       updatePageState( state)
-      $scope.lastPage = false // TODO: what if there is only one page?
     }
     $scope.pageNext = function() {
       var state = subscriptionView.pageNext( alarmRest, pageNotify)
@@ -2868,9 +3403,6 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     $scope.pagePrevious = function() {
       var state = subscriptionView.pagePrevious( alarmRest, pageNotify)
       updatePageState( state)
-      // TODO: We're assuming that if previous was successful, there must be a next page. This may not always be true, especially with search!
-      if( state !== SubscriptionViewState.PAGING_PREVIOUS && $scope.lastPage)
-        $scope.lastPage = false
     }
 
 
@@ -2912,7 +3444,7 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
           $scope.selectItem( a, 0) // 0: unchecked. Selection needs to decrement its select count.
       })
 
-      if( $scope.pageState !== SubscriptionViewState.CURRENT)
+      if( $scope.pageState !== GBSubscriptionViewState.FIRST_PAGE)
         $scope.newItems = 'New alarms'
 
       $scope.loading = false
@@ -2935,27 +3467,24 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
   controller('gbEventsController', ['$scope', '$attrs', 'subscription', 'eventRest', function( $scope, $attrs, subscription, eventRest) {
     $scope.loading = true
     $scope.limit = Number( $attrs.limit || 20);
-    var subscriptionView = new SubscriptionView( $scope.limit, $scope.limit * 4)
+    var subscriptionView = new GBSubscriptionView( $scope.limit, $scope.limit * 4, undefined, GreenbusViewsEventSortByTime)
     $scope.events = subscriptionView.items
-    $scope.pageState = SubscriptionViewState.CURRENT
-    $scope.lastPage = false
+    $scope.pageState = GBSubscriptionViewState.FIRST_PAGE
     $scope.newItems = undefined
 
     // Paging functions
     //
     function updatePageState( state) {
       $scope.pageState = state
-      if( state === SubscriptionViewState.CURRENT)
+      if( state === GBSubscriptionViewState.FIRST_PAGE)
         $scope.newItems = undefined
     }
-    function pageNotify( state, pageCacheOffset, lastPage, oldItems) {
+    function pageNotify( state, oldItems) {
       updatePageState( state)
-      $scope.lastPage = lastPage
     }
     $scope.pageFirst = function() {
       var state = subscriptionView.pageFirst()
       updatePageState( state)
-      $scope.lastPage = false // TODO: what if there is only one page?
     }
     $scope.pageNext = function() {
       var state = subscriptionView.pageNext( eventRest, pageNotify)
@@ -2964,15 +3493,12 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     $scope.pagePrevious = function() {
       var state = subscriptionView.pagePrevious( eventRest, pageNotify)
       updatePageState( state)
-      // TODO: We're assuming that if previous was successful, there must be a next page. This may not always be true, especially with search!
-      if( state !== SubscriptionViewState.PAGING_PREVIOUS && $scope.lastPage)
-        $scope.lastPage = false
     }
 
 
     $scope.onEvent = function( subscriptionId, type, event) {
       subscriptionView.onMessage( event)
-      if( $scope.pageState !== SubscriptionViewState.CURRENT)
+      if( $scope.pageState !== GBSubscriptionViewState.FIRST_PAGE)
         $scope.newItems = 'New events'
       $scope.loading = false
       $scope.$digest()
@@ -3145,22 +3671,6 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
     }
   }).
 
-  filter('pagePreviousClass', function() {
-    return function(pageState) {
-      return pageState !== SubscriptionViewState.PAGED && pageState !== SubscriptionViewState.NO_ITEMS ? 'btn btn-default disabled' : 'btn btn-default'
-    };
-  }).
-  filter('pageNextClass', function() {
-    return function(pageState, lastPage) {
-      return lastPage || pageState === SubscriptionViewState.PAGING_NEXT || pageState === SubscriptionViewState.NO_ITEMS ? 'btn btn-default disabled' : 'btn btn-default'
-    };
-  }).
-  filter('pagingIcon', function() {
-    return function(pageState, direction) {
-      var spin = (direction === 'right' && pageState === SubscriptionViewState.PAGING_NEXT) || (direction === 'left' && pageState === SubscriptionViewState.PAGING_PREVIOUS)
-      return spin ? 'fa fa-spin fa-chevron-' + direction : 'fa fa-chevron-' + direction
-    };
-  }).
   filter('alarmAckClass', function() {
     return function(state, updateState) {
       var s
@@ -3256,524 +3766,23 @@ angular.module('greenbus.views.event', ['greenbus.views.rest', 'greenbus.views.s
 ;
 
 
-var SubscriptionCache, SubscriptionCacheAction;
-
-SubscriptionCacheAction = {
-  NONE: 0,
-  UPDATE: 1,
-  INSERT: 2,
-  REMOVE: 3,
-  MOVE: 4,
-  TRIM: 5
-};
-
-SubscriptionCache = (function() {
-
-  /*
-    @param cacheSize -   
-    @param items -
-   */
-  function SubscriptionCache(cacheSize, items) {
-    var item, j, len, ref;
-    this.cacheSize = cacheSize;
-    this.itemStore = [];
-    this.itemIdMap = {};
-    if (items) {
-      this.itemStore = items.slice(0);
-      this.itemStore.sort(function(a, b) {
-        return b.time - a.time;
-      });
-      if (this.itemStore.length > this.cacheSize) {
-        this.itemStore = this.itemStore.slice(0, this.cacheSize);
-      }
-      ref = this.itemStore;
-      for (j = 0, len = ref.length; j < len; j++) {
-        item = ref[j];
-        this.itemIdMap[item.id] = item;
-      }
-    }
-  }
-
-  SubscriptionCache.prototype.onMessage = function(item) {
-    var action, actions, count, i, isArray, j, len, trimmed;
-    actions = [];
-    if (!item) {
-      return actions;
-    }
-    isArray = angular.isArray(item);
-    if (isArray) {
-      switch (item.length) {
-        case 0:
-          return actions;
-        case 1:
-          isArray = false;
-          item = item[0];
-      }
-    }
-    if (isArray) {
-      console.log('SubscriptionCache onMessage length=' + item.length);
-      actions = (function() {
-        var j, results;
-        results = [];
-        for (j = item.length - 1; j >= 0; j += -1) {
-          i = item[j];
-          results.push(this.updateOrInsert(i));
-        }
-        return results;
-      }).call(this);
-    } else {
-      action = this.updateOrInsert(item);
-      if (action.type !== SubscriptionCacheAction.NONE) {
-        actions[actions.length] = action;
-      }
-    }
-    if (this.itemStore.length > this.cacheSize) {
-      count = this.itemStore.length - this.cacheSize;
-      trimmed = this.itemStore.splice(this.cacheSize, count);
-      actions[actions.length] = {
-        type: SubscriptionCacheAction.TRIM,
-        at: this.cacheSize,
-        count: count,
-        items: trimmed
-      };
-      for (j = 0, len = trimmed.length; j < len; j++) {
-        item = trimmed[j];
-        delete this.itemIdMap[item.id];
-      }
-    }
-    return actions;
-  };
-
-  SubscriptionCache.prototype.updateOrInsert = function(item) {
-    var existing;
-    existing = this.itemIdMap[item.id];
-    if (existing) {
-      return this.update(existing, item);
-    } else {
-      return this.insert(item);
-    }
-  };
-
-  SubscriptionCache.prototype.itemAboveIsEarlier = function(item, index) {
-    return index > 0 && this.itemStore[index - 1].time < item.time;
-  };
-
-  SubscriptionCache.prototype.itemBelowIsLater = function(item, index) {
-    return index < this.itemStore.length - 1 && this.itemStore[index + 1].time > item.time;
-  };
-
-  SubscriptionCache.prototype.itemIsOutOfOrder = function(item, index) {
-    return this.itemAboveIsEarlier(item, index) || this.itemBelowIsLater(item, index);
-  };
-
-  SubscriptionCache.prototype.shouldRemoveItemOnUpdate = function(item) {
-    return false;
-  };
-
-  SubscriptionCache.prototype.convertInsertActionToIncludeRemove = function(item, index, action) {
-    if (action.type === SubscriptionCacheAction.INSERT) {
-      return {
-        type: SubscriptionCacheAction.MOVE,
-        from: index,
-        to: action.at,
-        item: item
-      };
-    } else {
-      return {
-        type: SubscriptionCacheAction.REMOVE,
-        from: index,
-        item: item
-      };
-    }
-  };
-
-  SubscriptionCache.prototype.update = function(item, update) {
-    var action, index;
-    angular.extend(item, update);
-    index = this.itemStore.indexOf(item);
-    if (index >= 0) {
-      if (this.shouldRemoveItemOnUpdate(item)) {
-        this.itemStore.splice(index, 1);
-        return {
-          type: SubscriptionCacheAction.REMOVE,
-          from: index,
-          item: item
-        };
-      } else if (this.itemIsOutOfOrder(item, index)) {
-        this.itemStore.splice(index, 1);
-        action = this.insert(item);
-        return this.convertInsertActionToIncludeRemove(item, index, action);
-      } else {
-        return {
-          type: SubscriptionCacheAction.UPDATE,
-          at: index,
-          item: item
-        };
-      }
-    } else {
-      return {
-        type: SubscriptionCacheAction.NONE,
-        item: item
-      };
-    }
-  };
-
-  SubscriptionCache.prototype.insert = function(item) {
-    var i, insertAt;
-    insertAt = -1;
-    if (this.itemStore.length === 0 || item.time >= this.itemStore[0].time) {
-      this.itemStore.unshift(item);
-      insertAt = 0;
-    } else {
-      i = 1;
-      while (true) {
-        if (i >= this.itemStore.length) {
-          if (this.itemStore.length < this.cacheSize) {
-            this.itemStore[this.itemStore.length] = item;
-            insertAt = this.itemStore.length - 1;
-          }
-          break;
-        } else if (item.time >= this.itemStore[i].time) {
-          this.itemStore.splice(i, 0, item);
-          insertAt = i;
-          break;
-        } else {
-          i++;
-        }
-      }
-    }
-    if (insertAt >= 0) {
-      this.itemIdMap[item.id] = item;
-      return {
-        type: SubscriptionCacheAction.INSERT,
-        at: insertAt,
-        item: item
-      };
-    } else {
-      return {
-        type: SubscriptionCacheAction.NONE,
-        item: item
-      };
-    }
-  };
-
-  SubscriptionCache.prototype.indexOfId = function(id) {
-    var index, item, j, len, ref;
-    ref = this.itemStore;
-    for (index = j = 0, len = ref.length; j < len; index = ++j) {
-      item = ref[index];
-      if (item.id === id) {
-        return index;
-      }
-    }
-    return -1;
-  };
-
-  SubscriptionCache.prototype.getItemById = function(id) {
-    return this.itemIdMap[id];
-  };
-
-  return SubscriptionCache;
-
-})();
-
-//# sourceMappingURL=SubscriptionCache.js.map
-
-var AlarmSubscriptionView, SubscriptionView, SubscriptionViewState,
-  bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+var GBAlarmSubscriptionView,
   extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
   hasProp = {}.hasOwnProperty;
 
-SubscriptionViewState = {
-  CURRENT: 0,
-  PAGING_NEXT: 1,
-  PAGING_PREVIOUS: 2,
-  PAGED: 3,
-  NO_ITEMS: 4
-};
+GBAlarmSubscriptionView = (function(superClass) {
+  extend(GBAlarmSubscriptionView, superClass);
 
-
-/*
-
-  Manage a set of items as subscription messages come in.
-
-  For paging, we could be paging inside the cache or past the end of the cache.
-
-  View  Cache
-  3     3
-  2     2
-        1
-
-  @param _limit - Maximum number of alarms
-  @param _items - if supplied, this array will be update and sorted with onMessage calls.
-                  Each item needs a 'time' property which holds a Javascript Date.
-  @constructor
- */
-
-SubscriptionView = (function(superClass) {
-  extend(SubscriptionView, superClass);
-
-  function SubscriptionView(viewSize, cacheSize, items) {
-    this.viewSize = viewSize;
-    this.cacheSize = cacheSize;
-    this.pageFailure = bind(this.pageFailure, this);
-    this.pageSuccess = bind(this.pageSuccess, this);
-    if (this.cacheSize == null) {
-      this.cacheSize = this.viewSize;
-    }
-    SubscriptionView.__super__.constructor.call(this, this.cacheSize, items);
-    this.items = this.itemStore.slice(0, this.viewSize);
-    if (this.items.length > this.viewSize) {
-      this.items.splice(this.viewSize, this.items.length - this.viewSize);
-    }
-    this.state = SubscriptionViewState.CURRENT;
-    this.pageCacheOffset = 0;
-    this.backgrounded = false;
-    this.pagePending = void 0;
-    this.previousPageCache = void 0;
+  function GBAlarmSubscriptionView() {
+    return GBAlarmSubscriptionView.__super__.constructor.apply(this, arguments);
   }
 
-  SubscriptionView.prototype.onMessage = function(item) {
-    var action, actions, acts, removed, removedItems;
-    removedItems = [];
-    actions = SubscriptionView.__super__.onMessage.call(this, item);
-    if (this.pageCacheOffset >= 0) {
-      acts = (function() {
-        var i, len, results;
-        results = [];
-        for (i = 0, len = actions.length; i < len; i++) {
-          action = actions[i];
-          results.push(this.act(action));
-        }
-        return results;
-      }).call(this);
-      removedItems = (function() {
-        var i, len, results;
-        results = [];
-        for (i = 0, len = acts.length; i < len; i++) {
-          removed = acts[i];
-          if (removed) {
-            results.push(removed);
-          }
-        }
-        return results;
-      })();
-      if (this.items.length > this.viewSize) {
-        removedItems = removedItems.concat(this.items.splice(this.viewSize, this.items.length - this.viewSize));
-      }
-    }
-    return removedItems;
-  };
-
-  SubscriptionView.prototype.act = function(action) {
-    switch (action.type) {
-      case SubscriptionCacheAction.UPDATE:
-        return this.actionUpdate(action);
-      case SubscriptionCacheAction.INSERT:
-        return this.actionInsert(action.item, action.at);
-      case SubscriptionCacheAction.REMOVE:
-        return this.actionRemove(action.item, action.from);
-      case SubscriptionCacheAction.MOVE:
-        return this.actionMove(action);
-      case SubscriptionCacheAction.TRIM:
-        return this.actionTrim(action);
-    }
-  };
-
-  SubscriptionView.prototype.actionUpdate = function(action) {};
-
-  SubscriptionView.prototype.actionMove = function(action) {
-    this.actionRemove(action.item, action.from);
-    return this.actionInsert(action.item, action.to);
-  };
-
-  SubscriptionView.prototype.actionTrim = function(action) {
-    var trimAt;
-    trimAt = action.at - this.pageCacheOffset;
-    if (trimAt <= 0) {
-      return this.pageCacheOffset = -1;
-    }
-  };
-
-  SubscriptionView.prototype.actionRemove = function(item, from) {
-    var removeAt, removed;
-    removed = void 0;
-    removeAt = from - this.pageCacheOffset;
-    if (removeAt >= 0 && removeAt < this.viewSize) {
-      removed = this.items[removeAt];
-      this.items.splice(removeAt, 1);
-    } else if (removeAt < 0) {
-      this.pageCacheOffset -= 1;
-    }
-    return removed;
-  };
-
-  SubscriptionView.prototype.actionInsert = function(item, insertAt) {
-    insertAt = insertAt - this.pageCacheOffset;
-    if ((this.pageCacheOffset === 0 && insertAt === 0) || (insertAt > 0 && insertAt < this.viewSize)) {
-      this.items.splice(insertAt, 0, item);
-    } else if (insertAt <= 0) {
-      this.pageCacheOffset += 1;
-    }
-    return void 0;
-  };
-
-  SubscriptionView.prototype.background = function() {
-    if (!this.backgrounded) {
-      this.backgrounded = true;
-      return this.items.splice(0, this.items.length);
-    }
-  };
-
-  SubscriptionView.prototype.foreground = function() {
-    if (this.backgrounded) {
-      this.replaceItems(this.itemStore.slice(0, this.viewSize));
-      return this.backgrounded = false;
-    }
-  };
-
-  SubscriptionView.prototype.updateState = function() {
-    return this.state = (function() {
-      switch (false) {
-        case this.items.length !== 0:
-          return SubscriptionViewState.NO_ITEMS;
-        case this.pageCacheOffset === 0:
-          return SubscriptionViewState.PAGED;
-        default:
-          return SubscriptionViewState.CURRENT;
-      }
-    }).call(this);
-  };
-
-  SubscriptionView.prototype.pageSuccess = function(items) {
-    var oldItems, ref, ref1, ref2, ref3;
-    switch ((ref = this.pagePending) != null ? ref.direction : void 0) {
-      case 'next':
-        if (this.pagePending.cache) {
-          items = this.pagePending.cache.concat(items);
-        }
-        this.previousPageCache = this.items.slice(0);
-        this.replaceItems(items);
-        this.items.sort(function(a, b) {
-          return b.time - a.time;
-        });
-        this.pageCacheOffset = -1;
-        this.onMessage(items);
-        this.updateState();
-        if ((ref1 = this.pagePending) != null ? ref1.notify : void 0) {
-          this.pagePending.notify(this.state, this.pageCacheOffset, items.length < this.viewSize, this.previousPageCache);
-        }
-        return this.pagePending = void 0;
-      case 'previous':
-        oldItems = this.items.slice(0);
-        this.replaceItems(items);
-        this.items.sort(function(a, b) {
-          return b.time - a.time;
-        });
-        this.onMessage(items);
-        this.pageCacheOffset = this.indexOfId(this.items[0].id);
-        this.updateState();
-        if ((ref2 = this.pagePending) != null ? ref2.notify : void 0) {
-          this.pagePending.notify(this.state, this.pageCacheOffset, false, oldItems);
-        }
-        return this.pagePending = void 0;
-      default:
-        return console.log('SubscriptionView.pageSuccess but pagePending is ' + ((ref3 = this.pagePending) != null ? ref3.direction : void 0));
-    }
-  };
-
-  SubscriptionView.prototype.pageFailure = function(items) {};
-
-  SubscriptionView.prototype.pageNext = function(pageRest, notify) {
-    var limit, nextPageOffset;
-    if (this.pagePending) {
-      return 'pastPending';
-    }
-    switch (false) {
-      case !(this.pageCacheOffset < 0):
-        this.pagePending = {
-          direction: 'next',
-          notify: notify
-        };
-        pageRest.pageNext(this.items[this.items.length - 1].id, this.viewSize, this.pageSuccess, this.pageFailure);
-        return this.state = SubscriptionViewState.PAGING_NEXT;
-      case !(this.pageCacheOffset + 2 * this.viewSize <= this.itemStore.length):
-        this.pageCacheOffset += this.viewSize;
-        this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
-        return this.state = SubscriptionViewState.PAGED;
-      default:
-        nextPageOffset = this.pageCacheOffset + this.viewSize;
-        this.pagePending = {
-          direction: 'next',
-          notify: notify,
-          cache: this.itemStore.slice(nextPageOffset, nextPageOffset + this.viewSize)
-        };
-        limit = this.viewSize - this.pagePending.cache.length;
-        pageRest.pageNext(this.items[this.items.length - 1].id, limit, this.pageSuccess, this.pageFailure);
-        return this.state = SubscriptionViewState.PAGING_NEXT;
-    }
-  };
-
-  SubscriptionView.prototype.pagePrevious = function(pageRest, notify) {
-    if (this.pagePending) {
-      return 'pastPending';
-    }
-    switch (false) {
-      case !(this.pageCacheOffset < 0 && this.items.length === 0):
-        this.replaceItems(this.previousPageCache);
-        this.previousPageCache = void 0;
-        this.pageCacheOffset = this.indexOfId(this.items[0].id);
-        return this.updateState();
-      case !(this.pageCacheOffset < 0):
-        this.pagePending = {
-          direction: 'previous',
-          notify: notify
-        };
-        pageRest.pagePrevious(this.items[0].id, this.viewSize, this.pageSuccess, this.pageFailure);
-        return this.state = SubscriptionViewState.PAGING_PREVIOUS;
-      case this.pageCacheOffset !== 0:
-        return this.state = SubscriptionViewState.CURRENT;
-      default:
-        this.pageCacheOffset -= this.viewSize;
-        if (this.pageCacheOffset < 0) {
-          this.pageCacheOffset = 0;
-        }
-        this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
-        return this.state = this.pageCacheOffset > 0 ? SubscriptionViewState.PAGED : SubscriptionViewState.CURRENT;
-    }
-  };
-
-  SubscriptionView.prototype.pageFirst = function() {
-    this.pagePending = void 0;
-    this.pageCacheOffset = 0;
-    this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
-    return this.updateState();
-  };
-
-  SubscriptionView.prototype.replaceItems = function(source) {
-    var args;
-    this.items.splice(0, this.items.length);
-    args = [0, 0].concat(source);
-    return Array.prototype.splice.apply(this.items, args);
-  };
-
-  return SubscriptionView;
-
-})(SubscriptionCache);
-
-AlarmSubscriptionView = (function(superClass) {
-  extend(AlarmSubscriptionView, superClass);
-
-  function AlarmSubscriptionView() {
-    return AlarmSubscriptionView.__super__.constructor.apply(this, arguments);
-  }
-
-  AlarmSubscriptionView.prototype.shouldRemoveItemOnUpdate = function(item) {
+  GBAlarmSubscriptionView.prototype.shouldRemoveItemOnUpdate = function(item) {
     item._updateState = 'none';
     return item.state === 'REMOVED';
   };
 
-  AlarmSubscriptionView.prototype.onUpdateFailure = function(ids, newState) {
+  GBAlarmSubscriptionView.prototype.onUpdateFailure = function(ids, newState) {
     var alarm, i, id, len, results;
     results = [];
     for (i = 0, len = ids.length; i < len; i++) {
@@ -3788,15 +3797,15 @@ AlarmSubscriptionView = (function(superClass) {
     return results;
   };
 
-  AlarmSubscriptionView.prototype.filter = function(theFilter) {
+  GBAlarmSubscriptionView.prototype.filter = function(theFilter) {
     return this.items.filter(theFilter);
   };
 
-  return AlarmSubscriptionView;
+  return GBAlarmSubscriptionView;
 
-})(SubscriptionView);
+})(GBSubscriptionView);
 
-//# sourceMappingURL=SubscriptionView.js.map
+//# sourceMappingURL=GBAlarmSubscriptionView.js.map
 
 /**
  * Copyright 2014 Green Energy Corp.
@@ -4039,7 +4048,8 @@ angular.module( 'greenbus.views.measurement',
     'greenbus.views.equipment',
     'greenbus.views.rest',
     'greenbus.views.request',
-    'greenbus.views.selection'
+    'greenbus.views.selection',
+    'greenbus.views.point'
   ]).
 
   factory('pointIdToMeasurementHistoryMap', function() {
@@ -4219,12 +4229,19 @@ angular.module( 'greenbus.views.measurement',
     }
   }]).
 
-  controller('gbMeasurementsController', ['$scope', '$stateParams', 'rest', 'navigation', 'subscription', 'measurement', 'equipment', 'request', '$timeout',
-    function($scope, $stateParams, rest, navigation, subscription, measurement, equipment, request, $timeout) {
-      var self = this
-      $scope.points = []
+  controller('gbMeasurementsController', ['$scope', '$stateParams', 'rest', 'navigation', 'measurement', 'equipment', 'pointPageRest', 'request', '$timeout',
+    function($scope, $stateParams, rest, navigation, measurement, equipment, pointPageRest, request, $timeout) {
+      var currentSubscriptionId,
+          self = this,
+          microgridId       = $stateParams.microgridId,
+          navigationElement = $stateParams.navigationElement,
+          pageSize = Number( $scope.pageSize || 100),
+          subscriptionView = new GBSubscriptionView( pageSize, pageSize * 4, undefined, GBNameSortAscending)
+
+      $scope.points = subscriptionView.items
       $scope.pointsFiltered = []
       $scope.selectAllState = 0
+      $scope.pageState = GBSubscriptionViewState.FIRST_PAGE
       $scope.alerts = []
 
       // Search
@@ -4234,24 +4251,10 @@ angular.module( 'greenbus.views.measurement',
 
 
 
-
-      var depth, equipmentIds, equipmentIdsQueryParams,
-          microgridId       = $stateParams.microgridId,
-          navigationElement = $stateParams.navigationElement
-
       // Initialized from URL or menu click or both
       //
       if( ! navigationElement)
         return
-
-      if( navigationElement.equipmentChildren.length > 0 ) {
-        equipmentIds = navigationElement.equipmentChildren.map( function( child) { return child.id })
-        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
-      } else {
-        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', navigationElement.id)
-      }
-      // Rest API /models/1/points?equipmentIds=... depth defaults to 1. If equipment is microgrid, we need deeper.
-      depth = rest.queryParameterFromArrayOrString('depth', '9999')
 
       function findPoint(id) {
         var index = findPointIndex(id)
@@ -4348,9 +4351,25 @@ angular.module( 'greenbus.views.measurement',
 
       }
 
+      // Paging functions
+      //
+      function pageNotify( state, oldItems) {
+        $scope.pageState = state
+        subscribeToMeasurementsAndCommands()
+      }
+      $scope.pageFirst = function() {
+        $scope.pageState = subscriptionView.pageFirst()
+      }
+      $scope.pageNext = function() {
+        $scope.pageState = subscriptionView.pageNext( pointPageRest, pageNotify)
+      }
+      $scope.pagePrevious = function() {
+        $scope.pageState = subscriptionView.pagePrevious( pointPageRest, pageNotify)
+      }
+
 
       $scope.search = function(point) {
-        var s = $scope.searchText
+        var s = $scope.searchText.trim()
         if( s === undefined || s === null || s.length === 0 )
           return true
         s = s.toLowerCase()
@@ -4368,7 +4387,11 @@ angular.module( 'greenbus.views.measurement',
 
 
       function subscribeToMeasurements(pointIds) {
-        measurement.subscribe($scope, pointIds, {}, self,
+        if( currentSubscriptionId) {
+          measurement.unsubscribe( currentSubscriptionId)
+          currentSubscriptionId = undefined
+        }
+        return measurement.subscribe($scope, pointIds, {}, self,
           function( measurements) {
             //console.log( 'onMeasurements ' + Date.now() + ' ' + measurements.map( function(pm) { return pm.point.id}).join())
             measurements.forEach(function(pm) {
@@ -4388,52 +4411,6 @@ angular.module( 'greenbus.views.measurement',
         )
       }
 
-
-      function nameFromTreeNode(treeNode) {
-        if( treeNode )
-          return treeNode.label
-        else
-          return '...'
-      }
-
-      //function getEquipmentIds(treeNode) {
-      //  var result = []
-      //  treeNode.children.forEach(function(node) {
-      //    if( node.containerType && node.containerType !== 'Sourced' )
-      //      result.push(node.id)
-      //  })
-      //  return result
-      //}
-      //
-      //function navIdListener(id, treeNode) {
-      //  $scope.equipmentName = nameFromTreeNode(treeNode) + ' '
-      //  var equipmentIds = getEquipmentIds(treeNode)
-      //  var equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
-      //
-      //  var delimeter = '?'
-      //  var url = '/models/1/points'
-      //  if( equipmentIdsQueryParams.length > 0 ) {
-      //    url += delimeter + equipmentIdsQueryParams
-      //    delimeter = '&'
-      //    $scope.equipmentName = nameFromTreeNode(treeNode) + ' '
-      //  }
-      //  if( depth.length > 0 )
-      //    url += delimeter + depth
-      //
-      //  rest.get(url, 'points', $scope, function(data) {
-      //    // data is either a array of points or a map of equipmentId -> points[]
-      //    // If it's an object, convert it to a list of points.
-      //    if( angular.isObject(data) ) {
-      //      $scope.points = []
-      //      for( var equipmentId in data ) {
-      //        $scope.points = $scope.points.concat(data[equipmentId])
-      //      }
-      //    }
-      //    var pointIds = processPointsAndReturnPointIds($scope.points)
-      //    subscribeToMeasurements(pointIds)
-      //    getPointsCommands(pointIds)
-      //  })
-      //}
 
       function processPointsAndReturnPointIds(points) {
         var pointIds           = [],
@@ -4457,32 +4434,6 @@ angular.module( 'greenbus.views.measurement',
         })
         return pointIds
       }
-
-      // Now getting name from NavTreeController.menuSelect and menuSelect waits until the name is loaded before calling us.
-      //
-      //function notifyWhenEquipmentNamesAreAvailable(equipmentId) {
-      //  $scope.equipmentName = nameFromEquipmentIds($stateParams.equipmentIds) + ' '
-      //}
-      //
-      //function nameFromEquipmentIds(equipmentIds) {
-      //  var result = ''
-      //  if( equipmentIds ) {
-      //
-      //    if( angular.isArray(equipmentIds) ) {
-      //      equipmentIds.forEach(function(equipmentId, index) {
-      //        var treeNode = navigation.getTreeNodeByEquipmentId(equipmentId, notifyWhenEquipmentNamesAreAvailable)
-      //        if( index === 0 )
-      //          result += nameFromTreeNode(treeNode)
-      //        else
-      //          result += ', ' + nameFromTreeNode(treeNode)
-      //      })
-      //    } else {
-      //      var treeNode = navigation.getTreeNodeByEquipmentId(equipmentIds, notifyWhenEquipmentNamesAreAvailable)
-      //      result = nameFromTreeNode(treeNode)
-      //    }
-      //  }
-      //  return result
-      //}
 
       // commandType: CONTROL, SETPOINT_INT, SETPOINT_DOUBLE, SETPOINT_STRING
       var exampleControls = [
@@ -4543,23 +4494,28 @@ angular.module( 'greenbus.views.measurement',
         return control && setpoint ? control + ',' + setpoint : control + setpoint
       }
 
+      function subscribeToMeasurementsAndCommands() {
+        if( $scope.points.length > 0) {
+          var pointIds = processPointsAndReturnPointIds($scope.points)
+          currentSubscriptionId = subscribeToMeasurements(pointIds)
+          getCommandsForPoints(pointIds)
+        } else {
+          $scope.alerts = [{ type: 'info', message: 'No points found.'}]
+        }
+      }
+
       function getPointsAndSubscribeToMeasurements() {
 
-        var promise = $scope.pointsPromise || equipment.getCurrentPoints( true)
+        var promise = $scope.pointsPromise || equipment.getPoints( true, pageSize)
         promise.then(
           function( response) {
-            $scope.points = response.data
-            if( $scope.points.length > 0) {
-              var pointIds = processPointsAndReturnPointIds($scope.points)
-              subscribeToMeasurements(pointIds)
-              getCommandsForPoints(pointIds)
-            } else {
-              $scope.alerts = [{ type: 'info', message: 'No points found.'}]
-            }
+            subscriptionView.onMessage( response.data)
+            //$scope.points = response.data
+            subscribeToMeasurementsAndCommands()
             return response // for the then() chain
           },
           function( error) {
-            console.error( 'gbPointsTableController. Error ' + error.statusText)
+            console.error( 'gbMeasurementsController. Error ' + error.statusText)
             $scope.alerts = [{ type: 'danger', message: error.statusText}]
             return error
           }
@@ -4576,7 +4532,8 @@ angular.module( 'greenbus.views.measurement',
       // The template HTML will replace the directive.
       replace:     true,
       scope:       {
-        pointsPromise: '=?'
+        pointsPromise: '=?',
+        pageSize: '=?'
       },
       templateUrl: 'greenbus.views.template/measurement/measurements.html',
       controller:  'gbMeasurementsController'
@@ -5835,7 +5792,7 @@ angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.
 
 
 /**
- * Copyright 2014-2015 Green Energy Corp.
+ * Copyright 2014-2016 Green Energy Corp.
  *
  * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
  * contributor license agreements. See the NOTICE file distributed with this
@@ -5856,19 +5813,199 @@ angular.module('greenbus.views.notification', ['greenbus.views.rest', 'greenbus.
  */
 
 
+angular.module('greenbus.views.pager', []).
+
+controller( 'gbPagerController', ['$scope', function( $scope) {
+  var self = this
+
+}]).
+
+directive( 'gbPager', function(){
+  return {
+    restrict: 'E', // Element name
+    // The template HTML will replace the directive.
+    replace: true,
+    scope: {
+      model  : '=', // GBSubscriptionViewState
+      pageFirst: '&',
+      pagePrevious: '&',
+      pageNext: '&'
+    },
+    templateUrl: 'greenbus.views.template/pager/pager.html',
+    controller: 'gbPagerController'
+  }
+}).
+
+filter('pagePreviousClass', function() {
+  return function(model) {
+    return model === GBSubscriptionViewState.FIRST_PAGE || model === GBSubscriptionViewState.PAGING_PREVIOUS || model === GBSubscriptionViewState.NO_ITEMS || model === undefined ? 'btn btn-default disabled' : 'btn btn-default'
+  };
+}).
+filter('pageNextClass', function() {
+  return function(model) {
+    return model === GBSubscriptionViewState.LAST_PAGE || model === GBSubscriptionViewState.PAGING_NEXT || model === GBSubscriptionViewState.NO_ITEMS || model === undefined ? 'btn btn-default disabled' : 'btn btn-default'
+  };
+}).
+filter('pagingIcon', function() {
+  return function(model, direction) {
+    var spin = (direction === 'right' && model === GBSubscriptionViewState.PAGING_NEXT) || (direction === 'left' && model === GBSubscriptionViewState.PAGING_PREVIOUS)
+    return spin ? 'fa fa-spin fa-chevron-' + direction : 'fa fa-chevron-' + direction
+  };
+})
+
+
+
+
+
+/**
+ * Copyright 2014-2016 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+// The build system wants an AngularJS moduel for each directory.
+angular.module('greenbus.views.paging', [])
+/**
+ * Copyright 2014-2015 Green Energy Corp.
+ *
+ * Licensed to Green Energy Corp (www.greenenergycorp.com) under one or more
+ * contributor license agreements. See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership. Green Energy
+ * Corp licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ * Author: Flint O'Brien
+ */
+
+function GBNameSortAscending( a, b) {
+  var aName=a.name.toLowerCase(),
+      bName=b.name.toLowerCase()
+  return aName < bName ? -1
+    : aName > bName ? 1
+    : 0
+}
 /**
  * A table of points for the current equipment in $stateParams.
  */
-angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment']).
+angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment', 'greenbus.views.pager']).
 
-  controller('gbPointsTableController', ['$scope', '$stateParams', 'equipment',
-    function($scope, $stateParams, equipment) {
+  factory('pointPageRest', ['equipment', function( equipment) {
+
+    /**
+     * Get the next page after startAfterId (ordered by point name).
+     *
+     * @param ids Array of alarm IDs
+     * @param newState Examples; 'UNACK_SILENT','ACKNOWLEDGED'
+     */
+    function pageNext( startAfterId, limit, success, failure) {
+      return pageDo( startAfterId, limit, success, failure, true)
+    }
+
+    /**
+     * Get the previous page before startAfterId (ordered by point name).
+     *
+     * @param startAfterId
+     * @param limit Number of items to get
+     * @param success Success callback
+     * @param failure Failure callback
+     */
+    function pagePrevious( startAfterId, limit, success, failure) {
+      return pageDo( startAfterId, limit, success, failure, false)
+    }
+
+    /**
+     *
+     * @param startAfterId
+     * @param limit Number of items to get
+     * @param success Success callback
+     * @param failure Failure callback
+     * @param ascending boolean T: paging forwards by name, F: paging backwards.
+     */
+    function pageDo( startAfterId, limit, success, failure, ascending) {
+      var promise = equipment.getPoints( true, limit, startAfterId, ascending)
+      promise.then(
+        function( response) {
+          success( response.data)
+          return response // for the then() chain
+        },
+        function( error) {
+          console.error( 'gbPointsTableController.pageDo Error ' + error.statusText + ', startAfterId: ' + startAfterId + ', ascending:' + ascending)
+          $scope.alerts = [{ type: 'danger', message: error.statusText}]
+          failure( startAfterId, limit, error.data, error.status)
+          return error // for the then() chain
+        }
+      )
+
+      return promise
+    }
+
+    /**
+     * Public API
+     */
+    return {
+      pageNext: pageNext,
+      pagePrevious: pagePrevious
+    }
+  }]).
+
+
+  controller('gbPointsTableController', ['$scope', '$attrs', '$stateParams', 'equipment', 'pointPageRest',
+    function($scope, $attrs, $stateParams, equipment, pointPageRest) {
       var self = this,
           microgridId       = $stateParams.microgridId,
           navigationElement = $stateParams.navigationElement
 
-      $scope.points = []
+      var pageSize = Number( $scope.pageSize || 20),
+          subscriptionView = new GBSubscriptionView( pageSize, pageSize * 4, undefined, GBNameSortAscending)
+      $scope.points = subscriptionView.items
+      $scope.pageState = GBSubscriptionViewState.FIRST_PAGE
       $scope.alerts = []
+      $scope.searchText = ''
+
+
+      function updatePointTypesStrings() {
+        $scope.points.forEach( function(p) {p.typesString = p.types.join( ', ')})
+      }
+
+      // Paging functions
+      //
+      function pageNotify( state, oldItems) {
+        $scope.pageState = state
+        updatePointTypesStrings()
+      }
+      $scope.pageFirst = function() {
+        $scope.pageState = subscriptionView.pageFirst()
+      }
+      $scope.pageNext = function() {
+        $scope.pageState = subscriptionView.pageNext( pointPageRest, pageNotify)
+      }
+      $scope.pagePrevious = function() {
+        $scope.pageState = subscriptionView.pagePrevious( pointPageRest, pageNotify)
+      }
 
       $scope.closeAlert = function(index) {
         if( index < $scope.alerts.length)
@@ -5879,10 +6016,12 @@ angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment'
       //
       if( ! navigationElement)
         return
-      var promise = $scope.pointsPromise || equipment.getCurrentPoints( true)
+      var promise = $scope.pointsPromise || equipment.getPoints( true, pageSize)
       promise.then(
         function( response) {
-          $scope.points = response.data
+          subscriptionView.onMessage( response.data)
+          $scope.loading = false
+          updatePointTypesStrings()
           return response // for the then() chain
         },
         function( error) {
@@ -5891,6 +6030,19 @@ angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment'
           return error
         }
       )
+
+
+      $scope.search = function(point) {
+        var s = $scope.searchText.trim()
+        if( s === undefined || s === null || s.length === 0 )
+          return true
+        s = s.toLowerCase()
+
+        return point.name.toLowerCase().indexOf(s) !== -1 ||
+          point.unit.toLowerCase().indexOf(s) !== -1 ||
+          point.pointType.toLowerCase().indexOf(s) !== -1 ||
+          point.typesString.toLowerCase().indexOf(s) !== -1
+      }
 
     }
   ]).
@@ -5901,7 +6053,8 @@ angular.module('greenbus.views.point', [ 'ui.router', 'greenbus.views.equipment'
       // The template HTML will replace the directive.
       replace:     true,
       scope: {
-        pointsPromise: '=?'
+        pointsPromise: '=?',
+        pageSize: '=?'
       },
       templateUrl: 'greenbus.views.template/point/pointsTable.html',
       controller:  'gbPointsTableController'
@@ -7858,13 +8011,13 @@ angular.module("greenbus.views.template/equipment/equipment.html", []).run(["$te
     "            <gb-equipment-schematic></gb-equipment-schematic>\n" +
     "        </tab>\n" +
     "        <tab heading=\"Measurements\" ng-if=\"tabs.measurements\">\n" +
-    "            <gb-measurements points-promise=\"pointsPromise\"></gb-measurements>\n" +
+    "            <gb-measurements points-promise=\"pointsPromise\" page-size=\"pageSize\"></gb-measurements>\n" +
     "        </tab>\n" +
     "        <tab heading=\"Properties\" ng-if=\"tabs.properties\">\n" +
-    "            <gb-properties-table></gb-properties-table>\n" +
+    "            <gb-properties-table page-size=\"pageSize\"></gb-properties-table>\n" +
     "        </tab>\n" +
     "        <tab heading=\"Points\" ng-if=\"tabs.points\">\n" +
-    "            <gb-points-table points-promise=\"pointsPromise\"></gb-points-table>\n" +
+    "            <gb-points-table points-promise=\"pointsPromise\" page-size=\"pageSize\"></gb-points-table>\n" +
     "        </tab>\n" +
     "    </tabset>\n" +
     "</div>\n" +
@@ -8069,11 +8222,7 @@ angular.module("greenbus.views.template/event/events.html", []).run(["$templateC
     "            <alert type=\"info\" ng-show=\"newItems\" role=\"alert\" style=\" margin-bottom: 0;padding-top: 6px; padding-bottom: 6px;\"><i class=\"fa fa-info-circle\"></i> {{ newItems }}</alert>\n" +
     "        </div>\n" +
     "        <div class=\"col-md-4 text-right\" style=\"padding-top: 20px\">\n" +
-    "            <button type=\"button\" class=\"btn btn-default\" ng-click=\"pageFirst()\" ng-show=\"pageState !== 0\" style=\"margin-right: 1em;\" popover=\"Go to current events\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span style=\"font-weight: bolder\">|</span><i class=\"fa fa-chevron-left\" style=\"vertical-align: middle\"></i></button>\n" +
-    "            <div class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
-    "                <button type=\"button\" ng-class=\"pageState | pagePreviousClass\" ng-click=\"pagePrevious()\" popover=\"Previous page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"pageState | pagingIcon: 'left'\" style=\"vertical-align: middle\"></i></button>\n" +
-    "                <button type=\"button\" ng-class=\"pageState | pageNextClass: lastPage\" ng-click=\"pageNext()\" popover=\"Next page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"pageState | pagingIcon: 'right'\" style=\"vertical-align: middle\"></i></button>\n" +
-    "            </div>\n" +
+    "            <gb-pager model=\"pageState\" page-first=\"pageFirst()\" page-previous=\"pagePrevious()\" page-next=\"pageNext()\"></gb-pager>\n" +
     "        </div>\n" +
     "    </div>\n" +
     "    <div class=\"row\">\n" +
@@ -8115,9 +8264,12 @@ angular.module("greenbus.views.template/measurement/measurements.html", []).run(
   $templateCache.put("greenbus.views.template/measurement/measurements.html",
     "<div>\n" +
     "    <div class=\"row\">\n" +
-    "        <div class=\"col-md-6 col-md-offset-3\" style=\"margin-top: 1.2em;\">\n" +
-    "            <input type=\"text\"  class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
+    "        <div class=\"col-md-5 col-md-offset-3\" style=\"margin-top: 1.2em;\">\n" +
+    "            <input type=\"text\"  class=\"form-control\" placeholder=\"search by name, value, unit, type, ...\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
     "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-4 text-right\" style=\"padding-top: 20px\">\n" +
+    "            <gb-pager model=\"pageState\" page-first=\"pageFirst()\" page-previous=\"pagePrevious()\" page-next=\"pageNext()\"></gb-pager>\n" +
     "        </div>\n" +
     "    </div>\n" +
     "\n" +
@@ -8296,10 +8448,32 @@ angular.module("greenbus.views.template/notification/notification.html", []).run
     "</div>");
 }]);
 
+angular.module("greenbus.views.template/pager/pager.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/pager/pager.html",
+    "<div class=\"gb-pager\">\n" +
+    "    <button type=\"button\" class=\"btn btn-default\" ng-click=\"pageFirst()\" ng-show=\"model !== 'first-page' && model !== 'no-items' && model !== undefined\" style=\"margin-right: 1em;\" popover=\"Go to first page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><span style=\"font-weight: bolder\">|</span><i class=\"fa fa-chevron-left\" style=\"vertical-align: middle\"></i></button>\n" +
+    "    <div class=\"btn-group\" role=\"group\" aria-label=\"...\">\n" +
+    "        <button type=\"button\" ng-class=\"model | pagePreviousClass\" ng-click=\"pagePrevious()\" popover=\"Previous page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"model | pagingIcon: 'left'\" style=\"vertical-align: middle\"></i></button>\n" +
+    "        <button type=\"button\" ng-class=\"model | pageNextClass\" ng-click=\"pageNext()\" popover=\"Next page\" popover-trigger=\"mouseenter\" popover-placement=\"bottom\"><i ng-class=\"model | pagingIcon: 'right'\" style=\"vertical-align: middle\"></i></button>\n" +
+    "    </div>\n" +
+    "</div>");
+}]);
+
 angular.module("greenbus.views.template/point/pointsTable.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("greenbus.views.template/point/pointsTable.html",
     "<div class=\"table-responsive\" style=\"overflow-x: auto\">\n" +
     "    <alert ng-repeat=\"alert in alerts\" type=\"{{alert.type}}\" close=\"closeAlert($index)\">{{alert.message}}</alert>\n" +
+    "\n" +
+    "    <div class=\"row\">\n" +
+    "        <div class=\"col-md-5 col-md-offset-3\" style=\"margin-top: 1.2em;\">\n" +
+    "            <input type=\"text\"  class=\"form-control\" placeholder=\"search by name, unit, type, ...\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
+    "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-4 text-right\" style=\"padding-top: 20px\">\n" +
+    "            <gb-pager model=\"pageState\" page-first=\"pageFirst()\" page-previous=\"pagePrevious()\" page-next=\"pageNext()\"></gb-pager>\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "\n" +
     "    <table class=\"table table-condensed\">\n" +
     "        <thead>\n" +
     "        <tr>\n" +
@@ -8310,13 +8484,13 @@ angular.module("greenbus.views.template/point/pointsTable.html", []).run(["$temp
     "        </tr>\n" +
     "        </thead>\n" +
     "        <tbody>\n" +
-    "        <tr class=\"gb-point\" ng-repeat=\"point in points\">\n" +
+    "        <tr class=\"gb-point\" ng-repeat=\"point in pointsFiltered = (points | filter:search)\">\n" +
     "            <td>{{point.name}}</td>\n" +
     "            <td><img class=\"gb-icon\" ng-src=\"{{ point.pointType | pointTypeImage: point.unit }}\" width=\"14px\" height=\"14px\" title=\"{{ point.pointType | pointTypeText: point.unit }}\"/>\n" +
     "                {{point.pointType}}\n" +
     "            </td>\n" +
     "            <td>{{ point.unit }}</td>\n" +
-    "            <td>{{ point.types.join(', ') }}</td>\n" +
+    "            <td>{{ point.typesString }}</td>\n" +
     "        </tr>\n" +
     "        </tbody>\n" +
     "    </table>\n" +
