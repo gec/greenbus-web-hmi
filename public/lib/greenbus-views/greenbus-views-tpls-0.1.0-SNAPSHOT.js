@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2016-08-24
+ * Version: 0.1.0-SNAPSHOT - 2016-08-25
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.pager","greenbus.views.paging","greenbus.views.point","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription"]);
@@ -4359,12 +4359,20 @@ angular.module( 'greenbus.views.measurement',
       }
       $scope.pageFirst = function() {
         $scope.pageState = subscriptionView.pageFirst()
+        // Always updates from cache, so no pageNotify. Update subscriptions now!
+        subscribeToMeasurementsAndCommands()
       }
       $scope.pageNext = function() {
         $scope.pageState = subscriptionView.pageNext( pointPageRest, pageNotify)
+        // If paged from cache, we don't see a pageNotify. Update subscriptions now!
+        if( $scope.pageState !== GBSubscriptionViewState.PAGING_NEXT)
+          subscribeToMeasurementsAndCommands()
       }
       $scope.pagePrevious = function() {
         $scope.pageState = subscriptionView.pagePrevious( pointPageRest, pageNotify)
+        // If paged from cache, we don't see a pageNotify. Update subscriptions now!
+        if( $scope.pageState !== GBSubscriptionViewState.PAGING_PREVIOUS)
+          subscribeToMeasurementsAndCommands()
       }
 
 
