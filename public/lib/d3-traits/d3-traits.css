@@ -1,9 +1,9 @@
-/*! d3-traits - v0.0.1 - 2015-09-21
+/*! d3-traits - v0.0.1 - 2017-03-10
 * https://github.com/gec/d3-traits
-* Copyright (c) 2015 d3-traits; Licensed ,  */
+* Copyright (c) 2017 d3-traits; Licensed ,  */
 
 .bar {
-  fill: lightblue;
+  /* can't use fill color here because it overrides series colors */
 }
 
 .axis path,
