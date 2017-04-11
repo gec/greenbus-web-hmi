@@ -53,6 +53,11 @@ object Application extends Controller with ServiceAuthenticationImpl with RestSe
     Ok(views.html.operator("GreenBus HMI Operator"))
   }
 
+  def appsOperatorPopout = AuthenticatedPageAction { (request, session) =>
+    Logger.debug( "Application.appsOperatorPopout")
+    Ok(views.html.operatorPopout("GreenBus HMI Operator"))
+  }
+
   def appsChartPopout = AuthenticatedPageAction { (request, session) =>
     Logger.debug( "Application.appsChartPopout")
     Ok(views.html.chartPopout("GreenBus HMI Chart"))

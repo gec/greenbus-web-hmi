@@ -13,6 +13,7 @@ POST          /login                                                  controller
 
 GET           /websocket                                              controllers.Application.getWebSocket( authToken)
 
+GET           /apps/operator/popout/                                  controllers.Application.appsOperatorPopout
 GET           /apps/operator/                                         controllers.Application.appsOperator
 GET           /apps/chart/popout                                      controllers.Application.appsChartPopout
 GET           /apps/:app/menus/:menu                                  controllers.Application.getAppsMenus( app: String, menu: String)

@@ -1,0 +1,27 @@
+@(message: String)
+
+@main("OperatorPopout", routes.Assets.versioned("javascripts/operator")) {
+
+<gb-notification ></gb-notification>
+
+<nav-tree href="/apps/operator/menus/left"> </nav-tree>
+<div class="container-fluid">
+    <div class="row">
+
+        <div class="col-md-12">
+            <div ui-view></div>
+        </div>
+
+        <div class="navbar-fixed-bottom invisible ng-cloak">
+            <gb-charts></gb-charts>
+        </div>
+    </div>
+
+    <hr>
+
+    <footer>
+        <p>&copy; Green Energy Corp 2013-2017</p>
+    </footer>
+
+</div>
+}
