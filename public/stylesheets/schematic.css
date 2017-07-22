@@ -3,8 +3,12 @@ svg:not(:root), symbol {
 }
 .symbol {
 	stroke:white;
-	stroke-width: 2px;
+	stroke-width: 2;
 	background-color:transparent;
+}
+.symbol-state-unknown {
+	stroke:#999999;
+	stroke-dasharray: "6,4";
 }
 .clickable {
 	cursor:pointer;
@@ -29,6 +33,7 @@ text {
 text.default {
 	fill:white;
 	font-size:12px;
+	stroke:none;
 }
 text.data-label {
 	font-size:11px;
@@ -49,6 +54,73 @@ p.equipment-label {
 	text-align:center;
 	word-wrap:break-word;
 }
+
+
+.control-status-area {
+	fill: #888;
+	stroke: #888;
+}
+.control-status-area:hover {
+	fill: #aaa;
+}
+.control-label text {
+	fill:black;
+	font-size:12px;
+	stroke: None;
+	text-decoration:none !important;
+}
+.control-label path {
+	fill: #ccc;
+	stroke: #ccc;
+}
+.control-label:hover path {
+	fill: #eee;
+}
+
+.control-selected-area rect{
+	fill: #444;
+	stroke: #555;
+	stroke-width: 1;
+}
+.control-execute-button rect {
+	stroke-width: 1px;
+	rx:3;
+	ry:3;
+	fill: #444;
+	stroke: #aaa;
+}
+.control-execute-button rect:hover {
+	fill: #666;
+}
+.clickable .button text {
+	text-decoration:none;
+	pointer-events: none;
+}
+.no-pointer-events {
+	pointer-events: none;
+}
+
+.select-open-left {
+	-ms-transform: translate(-77px, 0px); /* IE 9 */
+	-webkit-transform: translate(-77px, 0px); /* Safari */
+	transform: translate(-77px, 0px);
+
+	-webkit-transition: all 0.2s ease-in;
+	-moz-transition: all 0.2s ease-in;
+	-o-transition: all 0.2s ease-in;
+	transition: all 0.2s ease-in;
+}
+.deselect {
+	-ms-transform: translate(0px, 0px); /* IE 9 */
+	-webkit-transform: translate(0px, 0px); /* Safari */
+	transform: translate(0px, 0px);
+
+	-webkit-transition: all 0.2s ease-in;
+	-moz-transition: all 0.2s ease-in;
+	-o-transition: all 0.2s ease-in;
+	transition: all 0.2s ease-in;
+}
+
 
 /*
 	Don't show the connection vertices. Need to remove the vertices and remove this style.
