@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2017-07-21
+ * Version: 0.1.0-SNAPSHOT - 2017-07-26
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.pager","greenbus.views.paging","greenbus.views.point","greenbus.views.popout","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription","greenbus.views.util"]);
@@ -7780,9 +7780,13 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
                 var message = 'Error getting points by name - status: ' + error.status + ', statusText: ' + error.statusText
                 console.error( 'gbSchematicController: ' + message)
                 $scope.alerts = [{ type: 'danger', message: message}]
+                $scope.loading = false
                 return error
               }
             )
+          } else {
+            // No points, just an SVG document
+            $scope.loading = false
           }
         }
       })
