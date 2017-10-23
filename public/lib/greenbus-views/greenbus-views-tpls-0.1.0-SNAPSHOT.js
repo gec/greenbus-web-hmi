@@ -2,7 +2,7 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2017-07-26
+ * Version: 0.1.0-SNAPSHOT - 2017-10-23
  * License: Apache-2.0
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.pager","greenbus.views.paging","greenbus.views.point","greenbus.views.popout","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription","greenbus.views.util"]);
@@ -1933,6 +1933,12 @@ angular.module('greenbus.views.command', []).
           break
       }
 
+      if( $scope.model.hasOwnProperty('metadata')  && $scope.model.metadata.hasOwnProperty('integerLabels') && angular.isObject($scope.model.metadata.integerLabels)) {
+        var integerLabels = $scope.model.metadata.integerLabels
+        var keys = Object.keys(integerLabels)
+        $scope.enumeratedValues = keys.map(function(key){return {id: key, label: integerLabels[key]}})
+        $scope.selectedEnumeratedValue = {label: 'choose value...'}
+      }
     }
 
     /**
@@ -2039,6 +2045,11 @@ angular.module('greenbus.views.command', []).
         })
     }
 
+    $scope.selectEnumeratedValue = function( value) {
+      $scope.setpoint.value = value.id
+      $scope.selectedEnumeratedValue = value
+    }
+
     $scope.execute = function() {
       console.log( 'gbCommandController.execute state: ' + $scope.state)
       $scope.replyError = undefined
@@ -2053,23 +2064,29 @@ angular.module('greenbus.views.command', []).
       }
 
       if( $scope.isSetpointType) {
-
-        if ($scope.setpoint.value === undefined || ($scope.pattern && !$scope.pattern.test($scope.setpoint.value))) {
-          console.log('gbCommandController.execute ERROR: setpoint value is invalid "' + $scope.setpoint.value + '"')
-          switch ($scope.model.commandType) {
-            case 'SETPOINT_INT':
-              alertDanger('Setpoint needs to be an integer value.');
-              return;
-            case 'SETPOINT_DOUBLE':
-              alertDanger('Setpoint needs to be a decimal value.');
-              return;
-            case 'SETPOINT_STRING':
-              alertDanger('Setpoint needs to have a text value.');
-              return;
-            default:
-              alertDanger('Setpoint value "' + $scope.setpoint.value + '" is invalid. Unknown setpoint command type: "' + $scope.model.commandType + '".')
-              console.error('Setpoint has unknown error, "' + $scope.setpoint.value + '" for command type ' + $scope.model.commandType)
-              return
+        if( $scope.enumeratedValues) {
+          if( $scope.setpoint.value === undefined || $scope.setpoint.value === '') {
+            alertDanger('Setpoint value needs to be selected.')
+            return
+          }
+        } else {
+          if ($scope.setpoint.value === undefined || ($scope.pattern && !$scope.pattern.test($scope.setpoint.value))) {
+            console.log('gbCommandController.execute ERROR: setpoint value is invalid "' + $scope.setpoint.value + '"')
+            switch ($scope.model.commandType) {
+              case 'SETPOINT_INT':
+                alertDanger('Setpoint needs to be an integer value.');
+                return;
+              case 'SETPOINT_DOUBLE':
+                alertDanger('Setpoint needs to be a decimal value.');
+                return;
+              case 'SETPOINT_STRING':
+                alertDanger('Setpoint needs to have a text value.');
+                return;
+              default:
+                alertDanger('Setpoint value "' + $scope.setpoint.value + '" is invalid. Unknown setpoint command type: "' + $scope.model.commandType + '".')
+                console.error('Setpoint has unknown error, "' + $scope.setpoint.value + '" for command type ' + $scope.model.commandType)
+                return
+            }
           }
         }
 
@@ -3808,6 +3825,548 @@ GBAlarmSubscriptionView = (function(superClass) {
 
 //# sourceMappingURL=GBAlarmSubscriptionView.js.map
 
+var SubscriptionCache, SubscriptionCacheAction;
+
+SubscriptionCacheAction = {
+  NONE: 0,
+  UPDATE: 1,
+  INSERT: 2,
+  REMOVE: 3,
+  MOVE: 4,
+  TRIM: 5
+};
+
+SubscriptionCache = (function() {
+
+  /*
+    @param cacheSize -   
+    @param items -
+   */
+  function SubscriptionCache(cacheSize, items) {
+    var item, j, len, ref;
+    this.cacheSize = cacheSize;
+    this.itemStore = [];
+    this.itemIdMap = {};
+    if (items) {
+      this.itemStore = items.slice(0);
+      this.itemStore.sort(function(a, b) {
+        return b.time - a.time;
+      });
+      if (this.itemStore.length > this.cacheSize) {
+        this.itemStore = this.itemStore.slice(0, this.cacheSize);
+      }
+      ref = this.itemStore;
+      for (j = 0, len = ref.length; j < len; j++) {
+        item = ref[j];
+        this.itemIdMap[item.id] = item;
+      }
+    }
+  }
+
+  SubscriptionCache.prototype.onMessage = function(item) {
+    var action, actions, count, i, isArray, j, len, trimmed;
+    actions = [];
+    if (!item) {
+      return actions;
+    }
+    isArray = angular.isArray(item);
+    if (isArray) {
+      switch (item.length) {
+        case 0:
+          return actions;
+        case 1:
+          isArray = false;
+          item = item[0];
+      }
+    }
+    if (isArray) {
+      console.log('SubscriptionCache onMessage length=' + item.length);
+      actions = (function() {
+        var j, results;
+        results = [];
+        for (j = item.length - 1; j >= 0; j += -1) {
+          i = item[j];
+          results.push(this.updateOrInsert(i));
+        }
+        return results;
+      }).call(this);
+    } else {
+      action = this.updateOrInsert(item);
+      if (action.type !== SubscriptionCacheAction.NONE) {
+        actions[actions.length] = action;
+      }
+    }
+    if (this.itemStore.length > this.cacheSize) {
+      count = this.itemStore.length - this.cacheSize;
+      trimmed = this.itemStore.splice(this.cacheSize, count);
+      actions[actions.length] = {
+        type: SubscriptionCacheAction.TRIM,
+        at: this.cacheSize,
+        count: count,
+        items: trimmed
+      };
+      for (j = 0, len = trimmed.length; j < len; j++) {
+        item = trimmed[j];
+        delete this.itemIdMap[item.id];
+      }
+    }
+    return actions;
+  };
+
+  SubscriptionCache.prototype.updateOrInsert = function(item) {
+    var existing;
+    existing = this.itemIdMap[item.id];
+    if (existing) {
+      return this.update(existing, item);
+    } else {
+      return this.insert(item);
+    }
+  };
+
+  SubscriptionCache.prototype.itemAboveIsEarlier = function(item, index) {
+    return index > 0 && this.itemStore[index - 1].time < item.time;
+  };
+
+  SubscriptionCache.prototype.itemBelowIsLater = function(item, index) {
+    return index < this.itemStore.length - 1 && this.itemStore[index + 1].time > item.time;
+  };
+
+  SubscriptionCache.prototype.itemIsOutOfOrder = function(item, index) {
+    return this.itemAboveIsEarlier(item, index) || this.itemBelowIsLater(item, index);
+  };
+
+  SubscriptionCache.prototype.shouldRemoveItemOnUpdate = function(item) {
+    return false;
+  };
+
+  SubscriptionCache.prototype.convertInsertActionToIncludeRemove = function(item, index, action) {
+    if (action.type === SubscriptionCacheAction.INSERT) {
+      return {
+        type: SubscriptionCacheAction.MOVE,
+        from: index,
+        to: action.at,
+        item: item
+      };
+    } else {
+      return {
+        type: SubscriptionCacheAction.REMOVE,
+        from: index,
+        item: item
+      };
+    }
+  };
+
+  SubscriptionCache.prototype.update = function(item, update) {
+    var action, index;
+    angular.extend(item, update);
+    index = this.itemStore.indexOf(item);
+    if (index >= 0) {
+      if (this.shouldRemoveItemOnUpdate(item)) {
+        this.itemStore.splice(index, 1);
+        return {
+          type: SubscriptionCacheAction.REMOVE,
+          from: index,
+          item: item
+        };
+      } else if (this.itemIsOutOfOrder(item, index)) {
+        this.itemStore.splice(index, 1);
+        action = this.insert(item);
+        return this.convertInsertActionToIncludeRemove(item, index, action);
+      } else {
+        return {
+          type: SubscriptionCacheAction.UPDATE,
+          at: index,
+          item: item
+        };
+      }
+    } else {
+      return {
+        type: SubscriptionCacheAction.NONE,
+        item: item
+      };
+    }
+  };
+
+  SubscriptionCache.prototype.insert = function(item) {
+    var i, insertAt;
+    insertAt = -1;
+    if (this.itemStore.length === 0 || item.time >= this.itemStore[0].time) {
+      this.itemStore.unshift(item);
+      insertAt = 0;
+    } else {
+      i = 1;
+      while (true) {
+        if (i >= this.itemStore.length) {
+          if (this.itemStore.length < this.cacheSize) {
+            this.itemStore[this.itemStore.length] = item;
+            insertAt = this.itemStore.length - 1;
+          }
+          break;
+        } else if (item.time >= this.itemStore[i].time) {
+          this.itemStore.splice(i, 0, item);
+          insertAt = i;
+          break;
+        } else {
+          i++;
+        }
+      }
+    }
+    if (insertAt >= 0) {
+      this.itemIdMap[item.id] = item;
+      return {
+        type: SubscriptionCacheAction.INSERT,
+        at: insertAt,
+        item: item
+      };
+    } else {
+      return {
+        type: SubscriptionCacheAction.NONE,
+        item: item
+      };
+    }
+  };
+
+  SubscriptionCache.prototype.indexOfId = function(id) {
+    var index, item, j, len, ref;
+    ref = this.itemStore;
+    for (index = j = 0, len = ref.length; j < len; index = ++j) {
+      item = ref[index];
+      if (item.id === id) {
+        return index;
+      }
+    }
+    return -1;
+  };
+
+  SubscriptionCache.prototype.getItemById = function(id) {
+    return this.itemIdMap[id];
+  };
+
+  return SubscriptionCache;
+
+})();
+
+//# sourceMappingURL=SubscriptionCache.js.map
+
+var AlarmSubscriptionView, SubscriptionView, SubscriptionViewState,
+  bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  extend = function(child, parent) { for (var key in parent) { if (hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; },
+  hasProp = {}.hasOwnProperty;
+
+SubscriptionViewState = {
+  CURRENT: 0,
+  PAGING_NEXT: 1,
+  PAGING_PREVIOUS: 2,
+  PAGED: 3,
+  NO_ITEMS: 4
+};
+
+
+/*
+
+  Manage a set of items as subscription messages come in.
+
+  For paging, we could be paging inside the cache or past the end of the cache.
+
+  View  Cache
+  3     3
+  2     2
+        1
+
+  @param _limit - Maximum number of alarms
+  @param _items - if supplied, this array will be update and sorted with onMessage calls.
+                  Each item needs a 'time' property which holds a Javascript Date.
+  @constructor
+ */
+
+SubscriptionView = (function(superClass) {
+  extend(SubscriptionView, superClass);
+
+  function SubscriptionView(viewSize, cacheSize, items) {
+    this.viewSize = viewSize;
+    this.cacheSize = cacheSize;
+    this.pageFailure = bind(this.pageFailure, this);
+    this.pageSuccess = bind(this.pageSuccess, this);
+    if (this.cacheSize == null) {
+      this.cacheSize = this.viewSize;
+    }
+    SubscriptionView.__super__.constructor.call(this, this.cacheSize, items);
+    this.items = this.itemStore.slice(0, this.viewSize);
+    if (this.items.length > this.viewSize) {
+      this.items.splice(this.viewSize, this.items.length - this.viewSize);
+    }
+    this.state = SubscriptionViewState.CURRENT;
+    this.pageCacheOffset = 0;
+    this.backgrounded = false;
+    this.pagePending = void 0;
+    this.previousPageCache = void 0;
+  }
+
+  SubscriptionView.prototype.onMessage = function(item) {
+    var action, actions, acts, removed, removedItems;
+    removedItems = [];
+    actions = SubscriptionView.__super__.onMessage.call(this, item);
+    if (this.pageCacheOffset >= 0) {
+      acts = (function() {
+        var i, len, results;
+        results = [];
+        for (i = 0, len = actions.length; i < len; i++) {
+          action = actions[i];
+          results.push(this.act(action));
+        }
+        return results;
+      }).call(this);
+      removedItems = (function() {
+        var i, len, results;
+        results = [];
+        for (i = 0, len = acts.length; i < len; i++) {
+          removed = acts[i];
+          if (removed) {
+            results.push(removed);
+          }
+        }
+        return results;
+      })();
+      if (this.items.length > this.viewSize) {
+        removedItems = removedItems.concat(this.items.splice(this.viewSize, this.items.length - this.viewSize));
+      }
+    }
+    return removedItems;
+  };
+
+  SubscriptionView.prototype.act = function(action) {
+    switch (action.type) {
+      case SubscriptionCacheAction.UPDATE:
+        return this.actionUpdate(action);
+      case SubscriptionCacheAction.INSERT:
+        return this.actionInsert(action.item, action.at);
+      case SubscriptionCacheAction.REMOVE:
+        return this.actionRemove(action.item, action.from);
+      case SubscriptionCacheAction.MOVE:
+        return this.actionMove(action);
+      case SubscriptionCacheAction.TRIM:
+        return this.actionTrim(action);
+    }
+  };
+
+  SubscriptionView.prototype.actionUpdate = function(action) {};
+
+  SubscriptionView.prototype.actionMove = function(action) {
+    this.actionRemove(action.item, action.from);
+    return this.actionInsert(action.item, action.to);
+  };
+
+  SubscriptionView.prototype.actionTrim = function(action) {
+    var trimAt;
+    trimAt = action.at - this.pageCacheOffset;
+    if (trimAt <= 0) {
+      return this.pageCacheOffset = -1;
+    }
+  };
+
+  SubscriptionView.prototype.actionRemove = function(item, from) {
+    var removeAt, removed;
+    removed = void 0;
+    removeAt = from - this.pageCacheOffset;
+    if (removeAt >= 0 && removeAt < this.viewSize) {
+      removed = this.items[removeAt];
+      this.items.splice(removeAt, 1);
+    } else if (removeAt < 0) {
+      this.pageCacheOffset -= 1;
+    }
+    return removed;
+  };
+
+  SubscriptionView.prototype.actionInsert = function(item, insertAt) {
+    insertAt = insertAt - this.pageCacheOffset;
+    if ((this.pageCacheOffset === 0 && insertAt === 0) || (insertAt > 0 && insertAt < this.viewSize)) {
+      this.items.splice(insertAt, 0, item);
+    } else if (insertAt <= 0) {
+      this.pageCacheOffset += 1;
+    }
+    return void 0;
+  };
+
+  SubscriptionView.prototype.background = function() {
+    if (!this.backgrounded) {
+      this.backgrounded = true;
+      return this.items.splice(0, this.items.length);
+    }
+  };
+
+  SubscriptionView.prototype.foreground = function() {
+    if (this.backgrounded) {
+      this.replaceItems(this.itemStore.slice(0, this.viewSize));
+      return this.backgrounded = false;
+    }
+  };
+
+  SubscriptionView.prototype.updateState = function() {
+    return this.state = (function() {
+      switch (false) {
+        case this.items.length !== 0:
+          return SubscriptionViewState.NO_ITEMS;
+        case this.pageCacheOffset === 0:
+          return SubscriptionViewState.PAGED;
+        default:
+          return SubscriptionViewState.CURRENT;
+      }
+    }).call(this);
+  };
+
+  SubscriptionView.prototype.pageSuccess = function(items) {
+    var oldItems, ref, ref1, ref2, ref3;
+    switch ((ref = this.pagePending) != null ? ref.direction : void 0) {
+      case 'next':
+        if (this.pagePending.cache) {
+          items = this.pagePending.cache.concat(items);
+        }
+        this.previousPageCache = this.items.slice(0);
+        this.replaceItems(items);
+        this.items.sort(function(a, b) {
+          return b.time - a.time;
+        });
+        this.pageCacheOffset = -1;
+        this.onMessage(items);
+        this.updateState();
+        if ((ref1 = this.pagePending) != null ? ref1.notify : void 0) {
+          this.pagePending.notify(this.state, this.pageCacheOffset, items.length < this.viewSize, this.previousPageCache);
+        }
+        return this.pagePending = void 0;
+      case 'previous':
+        oldItems = this.items.slice(0);
+        this.replaceItems(items);
+        this.items.sort(function(a, b) {
+          return b.time - a.time;
+        });
+        this.onMessage(items);
+        this.pageCacheOffset = this.indexOfId(this.items[0].id);
+        this.updateState();
+        if ((ref2 = this.pagePending) != null ? ref2.notify : void 0) {
+          this.pagePending.notify(this.state, this.pageCacheOffset, false, oldItems);
+        }
+        return this.pagePending = void 0;
+      default:
+        return console.log('SubscriptionView.pageSuccess but pagePending is ' + ((ref3 = this.pagePending) != null ? ref3.direction : void 0));
+    }
+  };
+
+  SubscriptionView.prototype.pageFailure = function(items) {};
+
+  SubscriptionView.prototype.pageNext = function(pageRest, notify) {
+    var limit, nextPageOffset;
+    if (this.pagePending) {
+      return 'pastPending';
+    }
+    switch (false) {
+      case !(this.pageCacheOffset < 0):
+        this.pagePending = {
+          direction: 'next',
+          notify: notify
+        };
+        pageRest.pageNext(this.items[this.items.length - 1].id, this.viewSize, this.pageSuccess, this.pageFailure);
+        return this.state = SubscriptionViewState.PAGING_NEXT;
+      case !(this.pageCacheOffset + 2 * this.viewSize <= this.itemStore.length):
+        this.pageCacheOffset += this.viewSize;
+        this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
+        return this.state = SubscriptionViewState.PAGED;
+      default:
+        nextPageOffset = this.pageCacheOffset + this.viewSize;
+        this.pagePending = {
+          direction: 'next',
+          notify: notify,
+          cache: this.itemStore.slice(nextPageOffset, nextPageOffset + this.viewSize)
+        };
+        limit = this.viewSize - this.pagePending.cache.length;
+        pageRest.pageNext(this.items[this.items.length - 1].id, limit, this.pageSuccess, this.pageFailure);
+        return this.state = SubscriptionViewState.PAGING_NEXT;
+    }
+  };
+
+  SubscriptionView.prototype.pagePrevious = function(pageRest, notify) {
+    if (this.pagePending) {
+      return 'pastPending';
+    }
+    switch (false) {
+      case !(this.pageCacheOffset < 0 && this.items.length === 0):
+        this.replaceItems(this.previousPageCache);
+        this.previousPageCache = void 0;
+        this.pageCacheOffset = this.indexOfId(this.items[0].id);
+        return this.updateState();
+      case !(this.pageCacheOffset < 0):
+        this.pagePending = {
+          direction: 'previous',
+          notify: notify
+        };
+        pageRest.pagePrevious(this.items[0].id, this.viewSize, this.pageSuccess, this.pageFailure);
+        return this.state = SubscriptionViewState.PAGING_PREVIOUS;
+      case this.pageCacheOffset !== 0:
+        return this.state = SubscriptionViewState.CURRENT;
+      default:
+        this.pageCacheOffset -= this.viewSize;
+        if (this.pageCacheOffset < 0) {
+          this.pageCacheOffset = 0;
+        }
+        this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
+        return this.state = this.pageCacheOffset > 0 ? SubscriptionViewState.PAGED : SubscriptionViewState.CURRENT;
+    }
+  };
+
+  SubscriptionView.prototype.pageFirst = function() {
+    this.pagePending = void 0;
+    this.pageCacheOffset = 0;
+    this.replaceItems(this.itemStore.slice(this.pageCacheOffset, this.pageCacheOffset + this.viewSize));
+    return this.updateState();
+  };
+
+  SubscriptionView.prototype.replaceItems = function(source) {
+    var args;
+    this.items.splice(0, this.items.length);
+    args = [0, 0].concat(source);
+    return Array.prototype.splice.apply(this.items, args);
+  };
+
+  return SubscriptionView;
+
+})(SubscriptionCache);
+
+AlarmSubscriptionView = (function(superClass) {
+  extend(AlarmSubscriptionView, superClass);
+
+  function AlarmSubscriptionView() {
+    return AlarmSubscriptionView.__super__.constructor.apply(this, arguments);
+  }
+
+  AlarmSubscriptionView.prototype.shouldRemoveItemOnUpdate = function(item) {
+    item._updateState = 'none';
+    return item.state === 'REMOVED';
+  };
+
+  AlarmSubscriptionView.prototype.onUpdateFailure = function(ids, newState) {
+    var alarm, i, id, len, results;
+    results = [];
+    for (i = 0, len = ids.length; i < len; i++) {
+      id = ids[i];
+      alarm = this.getItemById(id);
+      if (alarm) {
+        results.push(alarm._updateState = 'none');
+      } else {
+        results.push(void 0);
+      }
+    }
+    return results;
+  };
+
+  AlarmSubscriptionView.prototype.filter = function(theFilter) {
+    return this.items.filter(theFilter);
+  };
+
+  return AlarmSubscriptionView;
+
+})(SubscriptionView);
+
+//# sourceMappingURL=SubscriptionView.js.map
+
 /**
  * Copyright 2014 Green Energy Corp.
  *
@@ -4408,6 +4967,14 @@ angular.module( 'greenbus.views.measurement',
               if( point ) {
                 //pm.measurement.value = formatMeasurementValue( pm.measurement.value )
                 point.currentMeasurement = pm.measurement
+                var stringValue = point.currentMeasurement.value.toString()
+                if( point.hasOwnProperty('metadata')  && point.metadata.hasOwnProperty('integerLabels') && angular.isObject(point.metadata.integerLabels)) {
+                  var integerLabels = point.metadata.integerLabels
+                  if(integerLabels.hasOwnProperty(stringValue)) {
+                      point.currentMeasurement.valueBeforeApplyingLabel = point.currentMeasurement.value
+                      point.currentMeasurement.value = integerLabels[stringValue]
+                  }
+                }
               } else {
                 console.error('MeasurementsController.onMeasurements could not find point.id = ' + pm.point.id)
               }
@@ -4477,6 +5044,7 @@ angular.module( 'greenbus.views.measurement',
               if( point ) {
                 point.commands = data[pointId]
                 point.commandTypes = getCommandTypes( point.commands).toLowerCase()
+                console.log('commandTypes: ' + point.commandTypes)
               }
             }
 
@@ -8386,7 +8954,8 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
     var wsHanders = {
 
       onmessage: function (event) {
-        var message = JSON.parse(event.data)
+        var listener, exception,
+            message = JSON.parse(event.data)
 
         switch( message.type) {
           case 'ConnectionStatus':
@@ -8395,9 +8964,23 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
             break;
           case 'ExceptionMessage':
             console.error( 'ExceptionMessage: ' + JSON.stringify( message.data))
+            listener = getListenerForMessage( message)
+            if( listener && listener.error) {
+              exception = message.data === undefined ? 'unknown' :
+                message.data.exception === undefined ? 'unknown exception' :
+                  message.data.exception
+              listener.error( 'ExceptionMessage: ' + exception, message)
+            }
             break;
           case 'SubscriptionExceptionMessage':
             console.error( 'SubscriptionExceptionMessage: ' + JSON.stringify( message.data))
+            listener = getListenerForMessage( message)
+            if( listener && listener.error) {
+              exception = message.data === undefined ? 'unknown' :
+                message.data.exception === undefined ? 'unknown exception' :
+                message.data.exception
+              listener.error( 'SubscriptionExceptionMessage: ' + exception, message)
+            }
             break;
           case 'AllSubscriptionsCancelledMessage':
             console.error( 'AllSubscriptionsCancelledMessage: ' + JSON.stringify( message.data))
@@ -8406,7 +8989,7 @@ angular.module('greenbus.views.subscription', ['greenbus.views.authentication'])
 
           default:
             // console.debug( 'onMessage message.subscriptionId=' + message.subscriptionId + ', message.type=' + message.type)
-            var listener = getListenerForMessage( message)
+            listener = getListenerForMessage( message)
             if( listener)
               handleMessageWithListener( message, listener)
         }
@@ -8826,11 +9409,23 @@ angular.module("greenbus.views.template/command/command.html", []).run(["$templa
     "            </button>\n" +
     "\n" +
     "            <div ng-if=\"isSetpointType\" class=\"input-group input-group-sm-  {{form.setpoint_value.$error.pattern ? 'has-error' : ''}}\" ng-show=\"isSelected\">\n" +
-    "                <input type=\"text\" class=\"form-control\" ng-model=\"setpoint.value\" name=\"setpoint_value-{{ model.id }}\" ng-pattern=\"pattern\" style=\"width:6em;\" placeholder=\"{{ placeHolder}}\">\n" +
+    "                <input ng-if=\"!enumeratedValues\" type=\"text\" class=\"form-control\" ng-model=\"setpoint.value\" name=\"setpoint_value-{{ model.id }}\" ng-pattern=\"pattern\" style=\"width:6em;\" placeholder=\"{{ placeHolder}}\">\n" +
+    "                <!--<select ng-if=\"enumeratedValues\" name=\"options\" id=\"options\"-->\n" +
+    "                        <!--ng-options=\"option.label for option in enumeratedValues track by option.id\"-->\n" +
+    "                        <!--ng-model=\"model.selectedOption\"></select>-->\n" +
+    "                <div ng-if=\"enumeratedValues\" class=\"btn-group\" dropdown>\n" +
+    "                    <button type=\"button\" class=\"btn btn-default dropdown-toggle\" dropdown-toggle ng-disabled=\"disabled\">\n" +
+    "                        {{selectedEnumeratedValue.label}} <span class=\"caret\"></span>\n" +
+    "                    </button>\n" +
+    "                    <ul class=\"dropdown-menu\" role=\"menu\">\n" +
+    "                        <li ng-repeat=\"value in enumeratedValues track by value.id\"><a href ng-click=\"selectEnumeratedValue(value)\">{{value.label}}</a></li>\n" +
+    "                    </ul>\n" +
+    "                </div>\n" +
     "                <button type=\"button\" class=\"btn btn-primary\" ng-click=\"execute()\" style=\"border-top-left-radius: 0; border-bottom-left-radius: 0;\">\n" +
     "                    Set\n" +
     "                    <span style=\"padding-right: 0.5em;\"> </span><i ng-class=\"executeClasses\"></i>\n" +
     "                </button>\n" +
+    "\n" +
     "            </div>\n" +
     "\n" +
     "            <i class=\"fa fa-exclamation-circle gb-command-error\" ng-show=\"replyError\" popover=\"{{replyError}}\" popover-trigger=\"mouseenter\" popover-placement=\"top\"></i>\n" +
@@ -8902,6 +9497,64 @@ angular.module("greenbus.views.template/equipment/equipment.html", []).run(["$te
     "        </tab>\n" +
     "    </tabset>\n" +
     "</div>\n" +
+    "");
+}]);
+
+angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCache", function($templateCache) {
+  $templateCache.put("greenbus.views.template/ess/esses.html",
+    "<div>\n" +
+    "    <div class=\"row\">\n" +
+    "        <div class=\"col-md-5\">\n" +
+    "            <h3>All Energy Storage</h3>\n" +
+    "        </div>\n" +
+    "        <div class=\"col-md-7\" style=\"margin-top: 1.2em;\">\n" +
+    "            <input type=\"text\" class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
+    "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
+    "        </div>\n" +
+    "    </div>\n" +
+    "\n" +
+    "\n" +
+    "    <div ng-cloak style=\"margin-top: 1.4em\">\n" +
+    "        <table class=\"table table-condensed gb-table-2header\" style=\"border-collapse: separate\">\n" +
+    "            <thead>\n" +
+    "            <tr>\n" +
+    "                <th></th>\n" +
+    "                <th>Charge / Discharge</th>\n" +
+    "                <th colspan=\"3\"></th>\n" +
+    "                <th colspan=\"2\" class=\"gb-cell-highlight gb-cell-highlight-top\">Nameplate Capacity</a></th>\n" +
+    "            </tr>\n" +
+    "            <tr>\n" +
+    "                <th><a href=\"\" ng-click=\"sortColumn = 'name'; reverse=!reverse\">Device Name</a></th>\n" +
+    "                <th>Rate</th>\n" +
+    "                <th><a href=\"\" ng-click=\"sortColumn = 'state'; reverse=!reverse\">State</a></th>\n" +
+    "                <th title=\"State of Charge %\" style=\"text-align: center\">SOC %</th>\n" +
+    "                <th></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'powerCapacity'; reverse=!reverse\">Power</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'energyCapacity'; reverse=!reverse\">Energy</a></th>\n" +
+    "            </tr>\n" +
+    "            </thead>\n" +
+    "            <tbody>\n" +
+    "            <tr ng-repeat=\"ces in ceses | filter:searchText | orderBy:sortColumn:reverse\">\n" +
+    "                <td>{{ces.name}}</td>\n" +
+    "                <td>{{ces.power}}</td>\n" +
+    "                <td><img class=\"ces-state-icon\" ng-src=\"{{ces.state | essStateIcon}}\" title=\"{{ces.state | essStateDescription}}\" style=\"margin-top:2px\"/></td>\n" +
+    "                <td style=\"width: 60px\">\n" +
+    "                    <div class=\"battery-wrapper\" title=\"{{ces.state | essStateDescription}}\" >\n" +
+    "                        <div class=\"{{ces.percentSoc | essBatterySocChargedClass: ces.state}}\" style=\"width:{{ces.percentSocMax100}}%\"></div>\n" +
+    "                        <div class=\"{{ces.percentSoc | essBatterySocUnchargedClass: ces.state}}\" style=\"width:{{100-ces.percentSocMax100}}%\"></div>\n" +
+    "                        <div class=\"battery-overlay\"></div>\n" +
+    "                    </div>\n" +
+    "                </td>\n" +
+    "                <td>{{ces.percentSoc}}%</td>\n" +
+    "                <td class=\"gb-cell-highlight gb-cell-highlight-left\">{{ces.powerCapacity}}</td>\n" +
+    "                <td class=\"gb-cell-highlight gb-cell-highlight-right\">{{ces.energyCapacity}}</td>\n" +
+    "            </tr>\n" +
+    "            </tbody>\n" +
+    "        </table>\n" +
+    "    </div>\n" +
+    "\n" +
+    "</div>\n" +
+    "\n" +
     "");
 }]);
 
