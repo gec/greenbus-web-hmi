@@ -2,8 +2,8 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2017-10-23
- * License: Apache-2.0
+ * Version: 0.1.0-SNAPSHOT - 2018-01-04
+ * License: (Apache-2.0)
  */
 angular.module("greenbus.views", ["greenbus.views.tpls", "greenbus.views.assert","greenbus.views.authentication","greenbus.views.chart","greenbus.views.command","greenbus.views.endpoint","greenbus.views.equipment","greenbus.views.ess","greenbus.views.event","greenbus.views.measurement","greenbus.views.measurementValue","greenbus.views.navigation","greenbus.views.notification","greenbus.views.pager","greenbus.views.paging","greenbus.views.point","greenbus.views.popout","greenbus.views.property","greenbus.views.request","greenbus.views.rest","greenbus.views.schematic","greenbus.views.selection","greenbus.views.subscription","greenbus.views.util"]);
 angular.module("greenbus.views.tpls", ["greenbus.views.template/chart/chart.html","greenbus.views.template/chart/charts.html","greenbus.views.template/command/command.html","greenbus.views.template/endpoint/endpoints.html","greenbus.views.template/equipment/equipment.html","greenbus.views.template/ess/essesTable.html","greenbus.views.template/event/alarms.html","greenbus.views.template/event/alarmsAndEvents.html","greenbus.views.template/event/events.html","greenbus.views.template/measurement/measurements.html","greenbus.views.template/measurementValue/measurementValue.html","greenbus.views.template/navigation/navBarTop.html","greenbus.views.template/navigation/navList.html","greenbus.views.template/notification/notification.html","greenbus.views.template/pager/pager.html","greenbus.views.template/point/pointsTable.html","greenbus.views.template/popout/popout.html","greenbus.views.template/property/propertiesTable.html","greenbus.views.template/schematic/equipmentSchematic.html","greenbus.views.template/selection/selectAll.html"]);
@@ -2376,40 +2376,56 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
 
   factory('equipment', [ '$stateParams', '$q', 'rest', function( $stateParams, $q, rest) {
 
-    var pointsCache = {
-      url: undefined,
-      data: undefined
+    var exports = {}
+
+    // Common Types - common to Equipment and Points. Not exported.
+    var CT = {
+      AGGREGATE: 'Aggregate',
+      UNKNOWN: 'Unknown'
+    }
+    // Equipment Types
+    exports.ET = {
+      AGGREGATE: CT.AGGREGATE,
+      CHP: 'CHP',
+      CUSTOMER_BREAKER: 'CustomerBreaker',
+      ESS: 'ESS',
+      GRID: 'Grid',
+      LOAD: 'Load',
+      PCC: 'PCC',
+      POI: 'POI',
+      PV: 'PV',
+      UNKNOWN: CT.UNKNOWN
+    }
+    // Point Types
+    exports.PT = {
+      AGGREGATE: CT.AGGREGATE,
+      BREAKER_STATUS: 'BreakerStatus', // Closed (true), Open (false)
+      CHP_POWER_AGGREGATE: 'CHPAggregate',
+      DEMAND_CHARGE_SOURCE: 'DemandChargeSource',
+      ESS_MODE: 'ESSMode',
+      ESS_POWER: 'OutputPower',
+      ESS_POWER_AGGREGATE: 'ESSAggregate',
+      FLOW_DIRECTION: 'FlowDirection',
+      FREQUENCY_SOURCE: 'FreqSource',
+      LOAD: 'LoadPower',
+      LOAD_AGGREGATE: 'LoadAggregate',
+      MODE_STATE: 'ModeState',
+      POWER: 'DemandPower',           // Import (+), Export (-)
+      POWER_AGGREGATE: 'DemandPowerAggregate',
+      POWER_FACTOR: 'PowerFactor',
+      DCM_TARGET_POWER: 'DCMTargetPower',
+      PV_POWER_AGGREGATE: 'PVAggregate',
+      UNKNOWN: CT.UNKNOWN
     }
 
-    function getEquipmentIdsQueryParams( navigationElement) {
-      if( ! navigationElement)
-        return ''
-
-      var equipmentIds, equipmentIdsQueryParams
-
-      if( navigationElement.equipmentChildren.length > 0 ) {
-        equipmentIds = navigationElement.equipmentChildren.map( function( child) { return child.id })
-        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
-      } else {
-        equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', navigationElement.id)
-      }
-      return equipmentIdsQueryParams
-    }
 
     /**
      *
      * @param collapsePointsToArray If true, points will always be returned as a list.
      * @returns {Promise}
      */
-    function getPoints( collapsePointsToArray, limit, startAfterId, ascending) {
-      var navigationElement = $stateParams.navigationElement
-
-      // Initialized from URL or menu click or both
-      //
-      if( ! navigationElement)
-        return $q.when( [])
-
-      var equipmentIdsQueryParams = getEquipmentIdsQueryParams( navigationElement),
+    exports.getPointsForEquipmentIds = function(equipmentIds, collapsePointsToArray, limit, startAfterId, ascending) {
+      var equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds),
           depth = rest.queryParameterFromArrayOrString('depth', '9999'),
           startAfter = rest.queryParameterFromArrayOrString('startAfterId', startAfterId)
 
@@ -2433,36 +2449,201 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
         url += delimeter + 'ascending=false'
 
       return rest.get(url).then(
-        function( response) {
-          var points = [],
-              data = response.data
+          function( response) {
+            var points = [],
+                data = response.data
 
-          // data is either a array of points or a map of equipmentId -> points[]
-          // If it's an object, convert it to a list of points.
-          if( collapsePointsToArray && angular.isObject(data) ) {
-            for( var equipmentId in data ) {
-              points = points.concat(data[equipmentId])
+            // data is either a array of points or a map of equipmentId -> points[]
+            // If it's an object, convert it to a list of points.
+            if( collapsePointsToArray && angular.isObject(data) ) {
+              for( var equipmentId in data ) {
+                points = points.concat(data[equipmentId])
+              }
+            } else {
+              points = data
             }
-          } else {
-            points = data
+            return {data: points}
+          },
+          function( error) {
+            return error
           }
-          return {data: points}
-        },
-        function( error) {
-          return error
-        }
 
       )
+    }
+
+    /**
+     *
+     * @param collapsePointsToArray If true, points will always be returned as a list.
+     * @returns {Promise}
+     */
+    exports.getPoints = function( collapsePointsToArray, limit, startAfterId, ascending) {
+      var navigationElement = $stateParams.navigationElement
+
+      // Initialized from URL or menu click or both
+      //
+      if( ! navigationElement)
+        return $q.when( [])
+
+      var equipmentIds = navigationElement.equipmentIds
+
+      return exports.getPointsForEquipmentIds(equipmentIds, collapsePointsToArray, limit, startAfterId, ascending)
 
     }
 
+    /**
+     * Get equipments for microgrid with ALL of the given types (i.e. types anded together).
+     *
+     * @param microgridId Search one microgrid for equipments.
+     * @param equipmentTypes Array of resource types (or single resource type) found directly under uGrid.
+     * @param callee Use callee for 'this' when calling success or failure
+     * @param success Success callback
+     * @param failure Failure callback
+     */
+    exports.getEquipmentsWithTypesAnd = function( microgridId, equipmentTypes, callee, success, failure) {
+      if( ! microgridId || microgridId === '' || angular.isArray( microgridId)) {
+        console.error('equipment.getEquipmentsWithTypesAnd ERROR invalid microgridId = "' + microgridId + '"')
+        return false
+      }
 
+      function filterHasAllEquipmentTypes( equipment) {
+        var hasAllTypes = true
+        equipmentTypes.forEach( function( t) { if( equipment.types.indexOf( t) < 0) hasAllTypes = false})
+        return hasAllTypes
+      }
+
+      var equipmentIdsQueryString = rest.queryParameterFromArrayOrString( 'childTypes', equipmentTypes),
+          url = '/models/1/equipment/' + microgridId + '/descendants?depth=0&' + equipmentIdsQueryString
+  
+      rest.get( url, null, null,
+          function( data) {
+            var equipments = data.filter( filterHasAllEquipmentTypes)
+            success.call(callee, equipments)
+          },
+          function( data, statusCode, headers, config){
+            console.error( 'equipment.getEquipmentsWithTypesAnd ERROR getting equipments with type = ' + equipmentIdsQueryString + '". HTTP Status: ' + statusCode)
+            if( failure)
+              failure.call( callee, data, statusCode)
+          }
+      )
+
+      return true
+    }
+  
+  
+    function findRequiredType( element, requiredTypes) {
+      var index
+      for( index = 0; index < element.types.length; index++) {
+        var found = requiredTypes.indexOf( element.types[index])
+        if( found >= 0)
+          return requiredTypes[found]
+      }
+      return undefined
+    }
+  
+    function filterEquipmentIdPointsMapToRemovePointsMissingRequiredTypes( equipmentIDPointsMap, requiredPointTypes) {
+      if( requiredPointTypes.length === 0)
+        return equipmentIDPointsMap
+  
+      var resourceId, point, index, points, pointByTypeMap, sortedPoints,
+          resultPointsByResourceId = {}
+  
+      for( resourceId in equipmentIDPointsMap) {
+        if( ! equipmentIDPointsMap.hasOwnProperty( resourceId))
+          continue
+  
+        points = equipmentIDPointsMap[resourceId]
+  
+        pointByTypeMap = {}
+        for( index = 0; index < points.length; index++) {
+          point = points[index]
+          var requiredType = findRequiredType( point, requiredPointTypes)
+          if( requiredType) {
+            if( pointByTypeMap[requiredType] !== undefined)
+              console.error('equipment.filterEquipmentIdPointsMapToRemovePointsMissingRequiredTypes: ERROR: two points (' + pointByTypeMap[requiredType].name + ', ' + point.name + ') with type ' + requiredType)
+            pointByTypeMap[requiredType] = point
+          }
+        }
+  
+        sortedPoints = []
+        for( index = 0; index < requiredPointTypes.length; index++) {
+          var typ = requiredPointTypes[index]
+          point = pointByTypeMap[typ]
+          if( point)
+            sortedPoints[sortedPoints.length] = point
+        }
+  
+        resultPointsByResourceId[resourceId] = sortedPoints
+      }
+  
+      return resultPointsByResourceId
+    }
+  
+    /**
+     * Given a set of equipments, find points matching a list of point types for each resource. Return a map of
+     * resourceID to list of points (ordered by the original pointTypes array).
+     *
+     * @param equipments  Array of resources (i.e. equipment model objects)
+     * @param pointTypes  Array of point types. The order of this array is the order of the final points for each resource.
+     * @param callee Use callee for 'this' when calling success or failure
+     * @param success Success callback
+     * @param failure Failure callback
+     * @returns {boolean} return false if there was a problem with the arguments.
+     */
+    exports.getEquipmentPointsMapFromEquipmentsAndPointTypes = function( equipments, pointTypes, callee, success, failure) {
+      if( ! equipments) {
+        console.error('equipment.getEquipmentPointsMapFromEquipmentsAndPointTypes ERROR equipments array is undefined or null')
+        return false
+      } else if( ! angular.isArray( equipments)) {
+        console.error('equipment.getEquipmentPointsMapFromEquipmentsAndPointTypes ERROR equipments is not an array')
+        return false
+      } else if( equipments.length === 0) {
+        console.error('equipment.getEquipmentPointsMapFromEquipmentsAndPointTypes ERROR equipments array is empty')
+        return false
+      }
+  
+      if( ! pointTypes || ! angular.isArray( pointTypes)) {
+        pointTypes = []
+      }
+  
+      var pointsUrl, equipmentIdsQueryString,
+          pointTypesQueryString = rest.queryParameterFromArrayOrString( 'pointTypes', pointTypes),
+          equipmentIds = []
+  
+      equipments.forEach( function( eq) {
+        equipmentIds.push( eq.id)
+      })
+  
+      equipmentIdsQueryString = rest.queryParameterFromArrayOrString( 'equipmentIds', equipmentIds)
+  
+      pointsUrl = '/models/1/points?' + equipmentIdsQueryString
+      if( pointTypesQueryString.length > 0)
+        pointsUrl += '&' + pointTypesQueryString
+  
+      rest.get( pointsUrl, null, null,
+          function( equipmentIdPointsMap) {
+            success.call(callee, filterEquipmentIdPointsMapToRemovePointsMissingRequiredTypes( equipmentIdPointsMap, pointTypes))
+          },
+          function( data, statusCode, headers, config){
+            console.error( 'equipment.getEquipmentPointsMapFromEquipmentsAndPointTypes ERROR getting points with type = ' + pointTypesQueryString + '". HTTP Status: ' + statusCode)
+            if( failure)
+              failure.call( callee, data, statusCode)
+          }
+      )
+  
+      return true
+    }
+  
+    function objectValues( obj) {
+      var ra = []
+      Object.keys(obj).forEach( function (key) { ra[ra.length] = obj[key] })
+      return ra
+    }
+  
+  
     /**
      * Public API
      */
-    return {
-      getPoints: getPoints
-    }
+    return exports
   }]).
 
   controller('gbEquipmentController', ['$scope', '$state', '$stateParams', 'equipment',
@@ -2532,20 +2713,64 @@ angular.module('greenbus.views.equipment', [ 'ui.router', 'greenbus.views.rest']
  */
 
 angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.views.navigation', 'greenbus.views.rest', 'greenbus.views.subscription']).
-  
-  controller( 'gbEssesController', ['$scope', '$filter', '$stateParams', 'rest', 'measurement', 'subscription', '$location', function( $scope, $filter, $stateParams, rest, measurement, subscription, $location) {
+
+  factory('gbEssesConstants', function() {
+    return {
+      Status: {                  // label,          managed
+        Initializing: 0,         // 'Initializing', false
+        EVDisconnected: 1,       // 'EVDisconnected', false
+        Standby: 2,              // 'Standby', true
+        Idle: 3,                 // 'Idle', true
+        Charging: 4,             // 'Charging', true
+        Discharging: 5,          // 'Discharging', true
+        TrickleCharging: 6,      // 'TrickleCharging', true
+        Busy: 7,                 // 'Busy', true
+        Fault: 8,                // 'Fault', true
+        Unknown: 9,              // 'Unknown', false
+        IdleUnmanaged: 10,       // 'IdleUnmanaged', false
+        ChargingUnmanaged: 11,   // 'ChargingUnmanaged', false
+        DischargingUnmanaged: 12 // 'DischargingUnmanaged', false
+      },
+      StatusLabels: [
+        'Initializing',
+        'EVDisconnected',
+        'Standby',
+        'Idle',
+        'Charging',
+        'Discharging',
+        'TrickleCharging',
+        'Busy',
+        'Fault',
+        'Unknown',
+        'IdleUnmanaged',
+        'ChargingUnmanaged',
+        'DischargingUnmanaged'
+      ],
+      Models: {
+        PP_CA_30: 'CA-30',
+        GEC_AGGREGATED_ESS_01:'AggregatedEss-01'
+      }
+    }
+  }).
+
+  controller( 'gbEssesController', ['$scope', '$filter', '$stateParams', 'rest', 'measurement', 'subscription', '$location', 'gbEssesConstants', function( $scope, $filter, $stateParams, rest, measurement, subscription, $location, constants) {
     var nameplateSubscriptionId,
         PT = {
           Point: 'Point',
           Power: 'OutputPower',
+          PowerTarget: 'ChargeRateTarget',
           PercentSoc: '%SOC',
-          Standby: 'Standby'
+          Status: 'Status'//,
+          //Standby: 'Standby'
         },
         TypeToVarMap = {
           OutputPower: 'power',
           '%SOC': 'percentSoc',
-          Standby: 'standby'
-        }
+          Status: 'status'//,
+          //Standby: 'standby'
+        },
+        POINT_TYPES =  [PT.PercentSoc, PT.Power, /*PT.Standby,*/ PT.Status]
+
 
     $scope.ceses = []     // our mappings of data from the server
     $scope.searchText = ''
@@ -2563,14 +2788,8 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
     if( ! navigationElement)
       return
 
-    var equipment = navigationElement.equipmentChildren,
-        equipmentIds = [],
-        equipmentIdMap = {},
+    var equipments = navigationElement.equipmentChildren, // [{id: '...', name: '...', shortName: undefined}, ... ]
         cesMapByEquipmentId = {}
-    equipment.forEach( function( eq) {
-      equipmentIdMap[eq.id] = eq
-      equipmentIds.push( eq.id)
-    })
 
 
     var number = $filter('number')
@@ -2613,7 +2832,10 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
           value = formatNumberNoDecimal( value);
           break;
         case PT.Power:
-          value = formatNumberValue( value) + ' ' + info.unit;
+          value = formatNumberValue( value);
+          break;
+        case PT.Status:
+          value = Number( value);
           break;
         default:
       }
@@ -2621,23 +2843,21 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
     }
 
     // Return standby, charging, or discharging
-    function getState( ess) {
-      if( ess.standby.toLowerCase() === 'disabled' || ess.standby === 'OffAvailable' || ess.standby === 'true')
-        return 'standby';
-      else if( typeof ess.power == 'boolean')
-        return ess.power ? 'charging' : 'discharging';
-      else if( typeof ess.power.indexOf === 'function') {
-        // It's a string value + space + unit.
-        if( ess.power.indexOf('-') === 0) // has minus sign, so it's charging
-          return 'charging';
-        else if( ess.power.indexOf('0 ') === 0)
-          return 'standby';
-        else
-          return 'discharging'
-      }
-
-      return ''
-    }
+    // function getState( ess) {
+    //   if( ess.standby.toLowerCase() === 'disabled' || ess.standby === 'OffAvailable' || ess.standby === 'true')
+    //     return 'standby';
+    //   else if( typeof ess.power.indexOf === 'function') {
+    //     // It's a string value + space + unit.
+    //     if( ess.power.indexOf('-') === 0) // has minus sign, so it's charging
+    //       return 'charging';
+    //     else if( ess.power === 0 || ess.power === '0')
+    //       return 'standby';
+    //     else
+    //       return 'discharging'
+    //   }
+    //
+    //   return ''
+    // }
 
     //function makeCes( eq, capacityUnit) {
     function makeCes( eq) {
@@ -2645,25 +2865,26 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
         name: eq.name,
         energyCapacity: '',
         powerCapacity: '',
-        standby: '',
+        //standby: '',
         power: '',
         percentSoc: '',
         percentSocMax100: 0, // Used by batter symbol
-        standbyOrOnline: '', // 'Standby', 'Online'
-        state: 's'    // 'standby', 'charging', 'discharging'
+        state: '-',    // 'standby', 'charging', 'discharging'
+        status: 0,
+        statusLabel: '-',
       }
     }
 
-    var POINT_TYPES =  [PT.PercentSoc, PT.Power, PT.Standby]
     function getInterestingType( types) {
       for( var index = types.length-1; index >= 0; index--) {
         var typ = types[index]
         switch( typ) {
           case PT.PercentSoc:
           case PT.Power:
-          case PT.Standby:
-          case PT.PowerCapacity: // kW
-          case PT.EnergyCapacity: // kWh
+          //case PT.Standby:
+          case PT.Status:
+          // case PT.PowerCapacity: // kW
+          // case PT.EnergyCapacity: // kWh
             return typ
           default:
         }
@@ -2679,22 +2900,57 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       return null
     }
 
+    function uniformStatusFromPower( power) {
+      return isNaN(power) || power === 0 ? constants.Status.Idle
+          : power > 0 ? constants.Status.Discharging
+          : constants.Status.Charging
+    }
+
+    function uniformStatusFromPPCA30Status( status, power) {
+      switch( status) {
+        case 0: return constants.Status.Idle;
+        case 6: return constants.Status.Busy;
+        case 7: return uniformStatusFromPower(power)
+        case 8: return constants.Status.Fault;
+        case 9: return constants.Status.Busy;
+        default: return constants.Status.Unknown
+      }
+    }
+
+    function statusLabel(info, status) {
+      var stringValue = status.toString()
+      if( info.statusMetadata) {
+        var integerLabels = info.statusMetadata.integerLabels
+        return integerLabels.hasOwnProperty(stringValue) ? integerLabels[stringValue] : stringValue
+      } else
+        return stringValue
+    }
+
     function onMeasurement( pm) {
       var info = pointIdToInfoMap[ pm.point.id]
       if( info){
         console.log( 'gbEssController.onMeasurement ' + pm.point.id + ' "' + pm.measurement.value + '"')
         // Map the point.name to the standard types (i.e. capacity, standby, charging)
         var value = processValue( info, pm.measurement)
-        if( info.type == PT.Standby) {
-          if( value === 'OffAvailable' || value === 'true')
-            $scope.ceses[ info.cesIndex].standbyOrOnline = 'Standby'
-          else
-            $scope.ceses[ info.cesIndex].standbyOrOnline = 'Online'
-        } else if( info.type == PT.PercentSoc) {
-          $scope.ceses[ info.cesIndex].percentSocMax100 = Math.min( value, 100)
+        var ess = $scope.ceses[ info.cesIndex]
+        if( info.type === PT.PercentSoc) {
+          ess.percentSocMax100 = Math.min( value, 100)
+        } else if( info.type === PT.Status) {
+          //if( ess.model === constants.Models.PP_CA_30) {
+          //  ess.statusRaw = value
+          //  value = uniformStatusFromPPCA30Status(value, ess.power)
+          //  ess.statusLabel = constants.StatusLabels[value]
+          //} else {
+            ess.statusLabel = statusLabel(info, value)
+          //}
+        } else if( info.Type === PT.Power) {
+          //if( ess.model === constants.Models.PP_CA_30) {
+          //  ess.status = uniformStatusFromPPCA30Status(ess.statusRaw, value)
+          //  ess.statusLabel = constants.StatusLabels[ess.status]
+          //}
         }
-        $scope.ceses[ info.cesIndex][ TypeToVarMap[info.type]] = value
-        $scope.ceses[ info.cesIndex].state = getState( $scope.ceses[ info.cesIndex])
+        ess[ TypeToVarMap[info.type]] = value
+        //ess.state = getState( ess)
 
       } else {
         console.error( 'gbEssesController.onMeasurement could not find point.id = ' + pm.point.id)
@@ -2711,9 +2967,10 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
 
 
     // Called after get sourceUrl is successful
-    function getPointsForEquipmentAndSubscribeToMeasurements( ) {
+    function getPointsForEquipmentAndSubscribeToMeasurements( equipments) {
       var cesIndex, pointsUrl,
           pointIds = [],
+          equipmentIds = equipments.map(function(eq) {return eq.id }),
           pointTypesQueryParams = rest.queryParameterFromArrayOrString( 'pointTypes', POINT_TYPES),
           equipmentIdsQueryParams = rest.queryParameterFromArrayOrString('equipmentIds', equipmentIds)
 
@@ -2739,9 +2996,9 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
         //    }
         //  ]}
 
-        equipmentIds.forEach( function( eqId) {
+        equipments.forEach( function( eq) {
           var point, ces,
-              points = data[eqId],
+              points = data[eq.id],
               cesIndex = $scope.ceses.length
 
           if( points) {
@@ -2749,27 +3006,36 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
               point = getPointByType( points, typ)
               if( point) {
                 console.log( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements point: name=' + point.name + ', types = ' + point.types)
-                pointIdToInfoMap[point.id] = {
+                var pointInfo = {
                   'cesIndex': cesIndex,
                   'type': getInterestingType( point.types),
                   'unit': point.unit
                 }
+                if( point.hasOwnProperty('metadata')  && point.metadata.hasOwnProperty('integerLabels') && angular.isObject(point.metadata.integerLabels)) {
+                  pointInfo.statusMetadata = point.metadata
+                  // if(integerLabels.hasOwnProperty(stringValue)) {
+                  //   point.currentMeasurement.valueBeforeApplyingLabel = point.currentMeasurement.value
+                  //   point.currentMeasurement.value = integerLabels[stringValue]
+                  // }
+                }
+
+                pointIdToInfoMap[point.id] = pointInfo
                 pointIds.push( point.id)
               } else {
-                console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points entity[' + eqId + '] does not have point with type ' + typ)
+                console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points entity[' + eq.id + '] does not have point with type ' + typ)
               }
 
             })
-            ces = makeCes( equipmentIdMap[eqId])
-            cesMapByEquipmentId[eqId] = ces
+            ces = makeCes( eq)
+            cesMapByEquipmentId[eq.id] = ces
             $scope.ceses.push( ces)
           } else {
-            console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points did not return UUID=' + eqId)
+            console.error( 'gbEssesController.getPointsForEquipmentAndSubscribeToMeasurements  GET /models/n/points did not return UUID=' + eq.id)
           }
         })
 
         measurement.subscribe( $scope, pointIds, {}, self, onMeasurements)
-        subscribeToEquipmentNameplates()
+        subscribeToEquipmentNameplates(equipments, equipmentIds)
       })
 
     }
@@ -2792,6 +3058,9 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
         if( value.hasOwnProperty('capacity')) {
           ces.capacity = formatCapacity( value.capacity)
         }
+        if( value.hasOwnProperty('model')) {
+          ces.model = value.model
+        }
       }
     }
 
@@ -2808,7 +3077,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
               break;
             case 'REMOVED':
               ces.capacity = {}
-              console.error( 'gbEssesController: required property, "nameplate", was REMOVED from the model for ' + equipmentIdMap[property.entityId].name)
+              console.error( 'gbEssesController: required property, "nameplate", was REMOVED from the model for ' + property.entityId)
           }
         } else {
           console.error( 'gbEssesController: got notification of "nameplate" property for unknown equipmentId: ' + property.entityId)
@@ -2816,7 +3085,7 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       }
     }
 
-    function subscribeToEquipmentNameplates() {
+    function subscribeToEquipmentNameplates( equipments, equipmentIds) {
 
       var json = {
         name: 'SubscribeToProperties',
@@ -2852,7 +3121,21 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
     //var url = '/equipmentwithpointsbytype?' + eqTypes + '&' + pointTypes
     //rest.get( sourceUrl, 'equipment', $scope, getPointsForEquipmentAndSubscribeToMeasurements);
 
-    getPointsForEquipmentAndSubscribeToMeasurements()
+    if( $scope.queryEsses) {
+      var childTypes = rest.queryParameterFromArrayOrString( 'childTypes', ['ESS'])
+      var url = '/models/1/equipment/' + microgridId + '/descendants?depth=99&' + childTypes
+      rest.get(url, undefined, $scope).then (
+          function( response) {
+            getPointsForEquipmentAndSubscribeToMeasurements(response.data)
+          },
+          function(response){
+            console.error('gbEssesController.getEsses: rest.get error: ' + JSON.stringify(response))
+          }
+      )
+    } else {
+      getPointsForEquipmentAndSubscribeToMeasurements(equipments)
+    }
+
   }]).
 
 
@@ -2862,53 +3145,95 @@ angular.module('greenbus.views.ess', ['greenbus.views.measurement', 'greenbus.vi
       // The template HTML will replace the directive.
       replace: true,
       transclude: true,
-      scope: true,
+      scope: {
+        queryEsses: '@?',
+        showHeading: '@?'
+      }, // isolated scope!
       templateUrl: 'greenbus.views.template/ess/essesTable.html',
       controller: 'gbEssesController'
     }
   }).
 
-  filter('essStateIcon', function() {
-    return function(state) {
-      if( state === 'standby')
-        return '/images/essStandby29x16.png'
-      else if( state === 'charging')
-        return '/images/essCharging29x16.png'
-      else if( state === 'discharging')
-        return '/images/essDischarging29x16.png'
-      else
-        return ''
+  // filter('essStateIcon', function() {
+  //   return function(state) {
+  //     if( state === 'standby')
+  //       return '/images/essStandby29x16.png'
+  //     else if( state === 'charging')
+  //       return '/images/essCharging29x16.png'
+  //     else if( state === 'discharging')
+  //       return '/images/essDischarging29x16.png'
+  //     else
+  //       return ''
+  //   };
+  // }).
+  // filter('essStateIconClass', function() {
+  //   return function(state) {
+  //     if( state === 'standby')
+  //       return 'battery-state-icon fa fa-minus'
+  //     else if( state === 'charging')
+  //       return 'battery-state-icon fa fa-bolt'
+  //     else if( state === 'discharging')
+  //       return 'battery-state-icon fa fa-arrow-down'
+  //     else if( state === 'disconnected')
+  //       return 'battery-state-icon fa fa-times'
+  //     else
+  //       return ''
+  //   };
+  // }).
+  filter('essStatusIconClass', ['gbEssesConstants', function(constants) {
+    return function(status, extraClasses) {
+      var classes = 'battery-state-icon '
+      if (extraClasses !== undefined)
+        classes +=  extraClasses + ' '
+      switch( status) {
+        case constants.Status.Initializing: return classes + 'fa fa-question'
+        case constants.Status.EVDisconnected: return classes + 'fa fa-times'
+        case constants.Status.Standby:
+        case constants.Status.Idle:
+        case constants.Status.IdleUnmanaged: return classes + 'fa fa-minus'
+        case constants.Status.Charging: return classes + 'fa fa-bolt'
+        case constants.Status.ChargingUnmanaged: return classes + 'fa fa-bolt'
+        case constants.Status.TrickleCharging: return classes + 'fa fa-bolt'
+        case constants.Status.Discharging: return classes + 'fa fa-arrow-down'
+        case constants.Status.DischargingUnmanaged: return classes + 'fa fa-arrow-down'
+        case constants.Status.Busy:
+        case constants.Status.Fault: return classes + 'fa fa-minus'
+        case constants.Status.Unknown: return classes + 'fa fa-question'
+        default: return classes + 'fa fa-question'
+      }
     };
-  }).
-  filter('essStateDescription', function() {
-    return function(state) {
-      return state + ' state';
-    };
-  }).
-  filter('essBatterySocChargedClass', function() {
-    return function(soc, state) {
-      var classes = ( soc > 10 ) ? 'battery-soc charged' : 'battery-soc charged alarmed'
-      if( state === 'standby' )
+  }]).
+  // filter('essStateDescription', function() {
+  //   return function(state) {
+  //     return state + ' state';
+  //   };
+  // }).
+  filter('essBatterySocChargedClass', ['gbEssesConstants', function(constants) {
+    return function(soc, status) {
+      var classes = ( soc > 10 && soc !== 0) ? 'battery-soc charged' : 'battery-soc charged alarmed'
+      if( status === constants.Status.Standby || status === constants.Status.Idle || status === constants.Status.IdleUnmanaged)
         classes += ' standby'
       return classes
     };
-  }).
-  filter('essBatterySocUnchargedClass', function() {
-    return function(soc, state) {
+  }]).
+  filter('essBatterySocUnchargedClass', ['gbEssesConstants', function(constants) {
+    return function(soc, status) {
       var classes = null
       if( soc === null || soc === '' )
         classes = 'battery-soc unknown'
-      else if( soc > 10 )
+      else if( status === constants.Status.EVDisconnected)
+        classes = 'battery-soc uncharged storage-unavailable'
+      else if( soc > 10)
         classes = 'battery-soc uncharged'
       else
         classes = 'battery-soc uncharged alarmed'
 
-      if( state === 'standby')
+      if( status === constants.Status.Standby || status === constants.Status.Idle || status === constants.Status.IdleUnmanaged)
         classes += ' standby'
 
       return classes
     };
-  })
+  }])
 
 
 /**
@@ -6335,6 +6660,17 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
     //  }
     //]
 
+    /**
+     * Return the IDs for the equipment that this branch represents. If this branch has not equipmentChildren, then
+     * this is [branch.id]. If this branch does have equipmentChildren then it's the child IDs.
+     * @param branch Menu branch
+     * @returns Array of equipment IDs for the branch
+     */
+    function getEquipmentIdsFromBranch(branch) {
+      return branch.equipmentChildren === undefined || branch.equipmentChildren.length === 0 ? [branch.id]
+          : branch.equipmentChildren.map( function( child) { return child.id })
+    }
+
     // When an operator clicks a menu item, the menu item is highlighted and this function is called.
     // This function is specified by the HTML attribute: on-select = "menuSelect(branch)"
     //
@@ -6343,7 +6679,6 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
 
       if( branch.loading ) {
         console.log('NavTreeController.menuSelect ' + branch.label + ' loading... state=' + branch.state + ', class=' + branch.class + ', microgridId=' + branch.microgridId)
-        //$state.go(navigation.STATE_LOADING)
         return
       }
 
@@ -6364,7 +6699,8 @@ angular.module('greenbus.views.navigation', ['ui.bootstrap', 'ui.router', 'green
           types:     branch.types,
           name:      branch.name,      // full entity name
           shortName: branch.label,
-          equipmentChildren: branch.equipmentChildren // children that are equipment
+          equipmentChildren: branch.equipmentChildren, // children that are equipment
+          equipmentIds: getEquipmentIdsFromBranch(branch)
         }
       }
 
@@ -8368,6 +8704,18 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
         return measurement
       }
 
+      function measurementWithOptionalMetadataIntegerLabel( point, measurement) {
+        if( point.hasOwnProperty('metadata')  && point.metadata.hasOwnProperty('integerLabels') && angular.isObject(point.metadata.integerLabels)) {
+          var integerLabels = point.metadata.integerLabels,
+              stringValue = measurement.value.toString()
+          if(integerLabels.hasOwnProperty(stringValue)) {
+            measurement.valueBeforeApplyingLabel = measurement.value
+            measurement.value = integerLabels[stringValue]
+          }
+        }
+        return measurement
+      }
+
       function onMeasurements(measurements) {
         measurements.forEach(function(pm) {
           var currentMeasurement,
@@ -8393,6 +8741,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
             // TODO: if status measurement, check if not one of the symbol's states, then display Unknown state.
             // TODO: if status measurement is invalid quality, show invalid 'X' over center of symbol. Also for questionable quality.
             currentMeasurement = processMeasurement( pm.measurement)
+            currentMeasurement = measurementWithOptionalMetadataIntegerLabel( pointNSymbols.point, currentMeasurement)
             pointNSymbols.point.currentMeasurement = currentMeasurement
             pointNSymbols.equipmentSymbols.forEach(function(symbol) {symbol.currentMeasurement = currentMeasurement})
           } else {
@@ -8497,7 +8846,7 @@ angular.module('greenbus.views.schematic', ['greenbus.views.measurement', 'green
   directive('gbEquipmentSchematic', [ '$compile', 'schematic', function( $compile, schematic) {
     return {
       restrict: 'E',
-      scope:    true,
+      scope: {},  // isolated scope!
       controller: 'gbSchematicController',
       templateUrl: 'greenbus.views.template/schematic/equipmentSchematic.html',
       link: function (scope, elem, attrs) {
@@ -9500,68 +9849,10 @@ angular.module("greenbus.views.template/equipment/equipment.html", []).run(["$te
     "");
 }]);
 
-angular.module("greenbus.views.template/ess/esses.html", []).run(["$templateCache", function($templateCache) {
-  $templateCache.put("greenbus.views.template/ess/esses.html",
-    "<div>\n" +
-    "    <div class=\"row\">\n" +
-    "        <div class=\"col-md-5\">\n" +
-    "            <h3>All Energy Storage</h3>\n" +
-    "        </div>\n" +
-    "        <div class=\"col-md-7\" style=\"margin-top: 1.2em;\">\n" +
-    "            <input type=\"text\" class=\"form-control\" placeholder=\"search any column\" ng-model=\"searchText\" style=\"height: 100%;\">\n" +
-    "            <!--<button class=\"btn btn-info\" ng-click=\"search()\" style=\"height: 100%; width: 60px; margin-bottom: 10px;\"><i class=\"glyphicon glyphicon-search icon-white\"></i></button>-->\n" +
-    "        </div>\n" +
-    "    </div>\n" +
-    "\n" +
-    "\n" +
-    "    <div ng-cloak style=\"margin-top: 1.4em\">\n" +
-    "        <table class=\"table table-condensed gb-table-2header\" style=\"border-collapse: separate\">\n" +
-    "            <thead>\n" +
-    "            <tr>\n" +
-    "                <th></th>\n" +
-    "                <th>Charge / Discharge</th>\n" +
-    "                <th colspan=\"3\"></th>\n" +
-    "                <th colspan=\"2\" class=\"gb-cell-highlight gb-cell-highlight-top\">Nameplate Capacity</a></th>\n" +
-    "            </tr>\n" +
-    "            <tr>\n" +
-    "                <th><a href=\"\" ng-click=\"sortColumn = 'name'; reverse=!reverse\">Device Name</a></th>\n" +
-    "                <th>Rate</th>\n" +
-    "                <th><a href=\"\" ng-click=\"sortColumn = 'state'; reverse=!reverse\">State</a></th>\n" +
-    "                <th title=\"State of Charge %\" style=\"text-align: center\">SOC %</th>\n" +
-    "                <th></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'powerCapacity'; reverse=!reverse\">Power</a></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'energyCapacity'; reverse=!reverse\">Energy</a></th>\n" +
-    "            </tr>\n" +
-    "            </thead>\n" +
-    "            <tbody>\n" +
-    "            <tr ng-repeat=\"ces in ceses | filter:searchText | orderBy:sortColumn:reverse\">\n" +
-    "                <td>{{ces.name}}</td>\n" +
-    "                <td>{{ces.power}}</td>\n" +
-    "                <td><img class=\"ces-state-icon\" ng-src=\"{{ces.state | essStateIcon}}\" title=\"{{ces.state | essStateDescription}}\" style=\"margin-top:2px\"/></td>\n" +
-    "                <td style=\"width: 60px\">\n" +
-    "                    <div class=\"battery-wrapper\" title=\"{{ces.state | essStateDescription}}\" >\n" +
-    "                        <div class=\"{{ces.percentSoc | essBatterySocChargedClass: ces.state}}\" style=\"width:{{ces.percentSocMax100}}%\"></div>\n" +
-    "                        <div class=\"{{ces.percentSoc | essBatterySocUnchargedClass: ces.state}}\" style=\"width:{{100-ces.percentSocMax100}}%\"></div>\n" +
-    "                        <div class=\"battery-overlay\"></div>\n" +
-    "                    </div>\n" +
-    "                </td>\n" +
-    "                <td>{{ces.percentSoc}}%</td>\n" +
-    "                <td class=\"gb-cell-highlight gb-cell-highlight-left\">{{ces.powerCapacity}}</td>\n" +
-    "                <td class=\"gb-cell-highlight gb-cell-highlight-right\">{{ces.energyCapacity}}</td>\n" +
-    "            </tr>\n" +
-    "            </tbody>\n" +
-    "        </table>\n" +
-    "    </div>\n" +
-    "\n" +
-    "</div>\n" +
-    "\n" +
-    "");
-}]);
-
 angular.module("greenbus.views.template/ess/essesTable.html", []).run(["$templateCache", function($templateCache) {
   $templateCache.put("greenbus.views.template/ess/essesTable.html",
     "<div>\n" +
-    "    <div class=\"row\">\n" +
+    "    <div class=\"row\" ng-show=\"showHeading!=='false'\" style=\"margin-bottom: 1.4em\">\n" +
     "        <div class=\"col-md-5\">\n" +
     "            <h3>All Energy Storage</h3>\n" +
     "        </div>\n" +
@@ -9576,35 +9867,36 @@ angular.module("greenbus.views.template/ess/essesTable.html", []).run(["$templat
     "    </div>\n" +
     "\n" +
     "\n" +
-    "    <div ng-cloak style=\"margin-top: 1.4em\">\n" +
+    "    <div ng-cloak>\n" +
     "        <table class=\"table table-condensed gb-table-2header\" style=\"border-collapse: separate\">\n" +
     "            <thead>\n" +
     "            <tr>\n" +
     "                <th></th>\n" +
-    "                <th>Charge / Discharge</th>\n" +
+    "                <th></th>\n" +
     "                <th colspan=\"3\"></th>\n" +
     "                <th colspan=\"2\" class=\"gb-cell-highlight gb-cell-highlight-top\">Nameplate Capacity</a></th>\n" +
     "            </tr>\n" +
     "            <tr>\n" +
-    "                <th><a href=\"\" ng-click=\"sortColumn = 'name'; reverse=!reverse\">Device Name</a></th>\n" +
-    "                <th>Rate</th>\n" +
-    "                <th><a href=\"\" ng-click=\"sortColumn = 'state'; reverse=!reverse\">State</a></th>\n" +
-    "                <th title=\"State of Charge %\" style=\"text-align: center\">SOC %</th>\n" +
+    "                <th><a href=\"\" ng-click=\"sortColumn = 'name'; reverse=!reverse\">Device</a></th>\n" +
+    "                <th style=\"text-align: right;\"><a href=\"\" ng-click=\"sortColumn = 'power'; reverse=!reverse\">Power (kW)</a></th>\n" +
+    "                <th style=\"padding-left: 1em;\"><a href=\"\" ng-click=\"sortColumn = 'status'; reverse=!reverse\">Status</a></th>\n" +
+    "                <th title=\"State of Charge %\" style=\"text-align: center\"><a href=\"\" ng-click=\"sortColumn = 'percentSoc'; reverse=!reverse\">SOC %</a></th>\n" +
     "                <th></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'powerCapacity'; reverse=!reverse\">Power (kW)</a></th>\n" +
-    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'energyCapacity'; reverse=!reverse\">Energy (kWh)</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-left\"><a href=\"\" ng-click=\"sortColumn = 'capacity.power'; reverse=!reverse\">Power (kW)</a></th>\n" +
+    "                <th class=\"gb-cell-highlight gb-cell-highlight-right\"><a href=\"\" ng-click=\"sortColumn = 'capacity.energy'; reverse=!reverse\">Energy (kWh)</a></th>\n" +
     "            </tr>\n" +
     "            </thead>\n" +
     "            <tbody>\n" +
     "            <tr ng-repeat=\"ces in ceses | filter:searchText | orderBy:sortColumn:reverse\">\n" +
     "                <td>{{ces.name}}</td>\n" +
-    "                <td>{{ces.power}}</td>\n" +
-    "                <td><img class=\"ces-state-icon\" ng-src=\"{{ces.state | essStateIcon}}\" title=\"{{ces.state | essStateDescription}}\" style=\"margin-top:2px\"/></td>\n" +
+    "                <td class=\"gb-value\">{{ces.power}}</td>\n" +
+    "                <td style=\"padding-left: 1em;\"><!--<i ng-class=\"ces.status | essStatusIconClass\" title=\"{{ces.statusLabel}}\" aria-hidden=\"true\"></i>-->{{ ces.statusLabel }}</td>\n" +
     "                <td style=\"width: 60px\">\n" +
-    "                    <div class=\"battery-wrapper\" title=\"{{ces.state | essStateDescription}}\" >\n" +
-    "                        <div class=\"{{ces.percentSoc | essBatterySocChargedClass: ces.state}}\" style=\"width:{{ces.percentSocMax100}}%\"></div>\n" +
-    "                        <div class=\"{{ces.percentSoc | essBatterySocUnchargedClass: ces.state}}\" style=\"width:{{100-ces.percentSocMax100}}%\"></div>\n" +
+    "                    <div class=\"battery-wrapper\" title=\"{{ces.statusLabel}}\" >\n" +
+    "                        <div class=\"{{ces.percentSoc | essBatterySocChargedClass: ces.status}}\" style=\"width:{{ces.percentSocMax100}}%\"></div>\n" +
+    "                        <div class=\"{{ces.percentSoc | essBatterySocUnchargedClass: ces.status}}\" style=\"width:{{100-ces.percentSocMax100}}%\"></div>\n" +
     "                        <div class=\"battery-overlay\"></div>\n" +
+    "                        <!--<i ng-show=\"ces.status === 1\" ng-class=\"ces.status | essStatusIconClass: 'battery-overlay-icon'\" title=\"{{ces.statusLabel}}\" aria-hidden=\"true\"></i>-->\n" +
     "                    </div>\n" +
     "                </td>\n" +
     "                <td>{{ces.percentSoc}}%</td>\n" +

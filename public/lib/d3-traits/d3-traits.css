@@ -1,6 +1,6 @@
-/*! d3-traits - v0.0.1 - 2017-03-10
+/*! d3-traits - v0.0.1 - 2018-01-04
 * https://github.com/gec/d3-traits
-* Copyright (c) 2017 d3-traits; Licensed ,  */
+* Copyright (c) 2018 d3-traits; Licensed  */
 
 .bar {
   /* can't use fill color here because it overrides series colors */

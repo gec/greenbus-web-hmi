@@ -2,8 +2,8 @@
  * greenbus-web-views
  * https://github.com/gec/greenbus-web-views
 
- * Version: 0.1.0-SNAPSHOT - 2017-10-23
- * License: Apache-2.0
+ * Version: 0.1.0-SNAPSHOT - 2018-01-04
+ * License: (Apache-2.0)
  */
 
 .noselect {
@@ -266,6 +266,15 @@ td.event-agent {
   filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#ffffffff', endColorstr='#fff2f2f2', GradientType=0);
 }
 
+.battery-state-icon {
+  margin-right: 0.5em;
+  font-size: 130%;
+  color: #888;
+  min-width: 1em;
+  text-align: center;
+  vertical-align: middle;
+}
+
 .battery-wrapper {
   display: block;
   width:50px;
@@ -306,6 +315,12 @@ overflow: visible;
   -moz-box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
   box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
 }
+.battery-soc.uncharged.storage-unavailable {
+  background-color: #CCC;
+  -webkit-box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
+  -moz-box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
+  box-shadow: 0px 0px 0px rgba(0, 0, 0, 0);
+}
 .battery-soc.alarmed{
   -webkit-box-shadow: 0px 0px 8px rgba(255, 0, 0, 1);
   -moz-box-shadow: 0px 0px 8px rgba(255, 0, 0, 1);
@@ -316,6 +331,15 @@ overflow: visible;
 }
 .battery-soc.unknown{
   background-color: darkgray;
+}
+.battery-overlay-icon{
+  position: relative;
+  left: -4px;
+  width: 60px;
+  height: 100%;
+  display: block;
+  top: -24px;
+  color: #8b0000;
 }
 .battery-overlay {
   position: relative;

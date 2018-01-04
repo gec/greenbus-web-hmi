@@ -1,6 +1,6 @@
-/*! d3-traits - v0.0.1 - 2017-03-10
+/*! d3-traits - v0.0.1 - 2018-01-04
 * https://github.com/gec/d3-traits
-* Copyright (c) 2017 d3-traits; Licensed ,  */
+* Copyright (c) 2018 d3-traits; Licensed  */
 (function(d3) {
 
 //    var a, b, c, d, e
@@ -406,7 +406,7 @@
         return self._super.__getRoot()
       else
         return self
-    },
+    }
 
       // TODO: make config from configs
 
@@ -1639,7 +1639,7 @@
           return false
 
         var shiftTotal = totalLength - this.constraints.size
-        shiftCurrent = Math.min( currentLength, shiftTotal),
+        shiftCurrent = Math.min( currentLength, shiftTotal)
         shiftPending = shiftTotal - shiftCurrent
       }
     }
@@ -3002,6 +3002,44 @@
     return minSeriesIndex
   }
 
+  function smallestNextX( iterators) {
+    var iter, nextX, smallest,
+        s = -1,
+        length = iterators.length
+
+    while( ++s < length) {
+      iter = iterators[s]
+      nextX = iter.peekNextX()
+      if( nextX !== undefined && (smallest === undefined || nextX < smallest)) {
+        smallest = nextX
+      }
+    }
+    return smallest
+  }
+
+  /**
+   * Find the greatest nextX across the the iterators. If any iterator's nextX is undefined, we fail and return undefined.
+   * Don't advance the iterator, just peek ahead!
+   * Use this to skip to first X available in all series.
+   * @param {array} iterators
+   * @returns {number|Date} the greatest nextX or undefined
+   */
+  function greatestNextX( iterators) {
+    var iter, nextX, greatest,
+        s = -1,
+        length = iterators.length
+
+    while( ++s < length) {
+      iter = iterators[s]
+      nextX = iter.peekNextX()
+      if( nextX === undefined)
+        return undefined
+      else if( greatest === undefined || nextX > greatest)
+        greatest = nextX
+    }
+    return greatest
+  }
+
   //function populateVerticalSliceAndAdvanceCursor( outSeries, series, cursors, access, minSeriesIndex, epsilon) {
   //  var cursor, seriesData, point,
   //      s = -1,
@@ -3042,20 +3080,26 @@
     if( !length)
       return []
 
-    var s, index, indexOfMinNextX, nextX,
-        target = makeTargetSeries( iterators)
+    var s, xIndex,
+        target = makeTargetSeries( iterators),
+        nextX = greatestNextX( iterators) // skip to first available X for all series.
 
-    index = 0
-    indexOfMinNextX = seriesIndexOfMinNextX( iterators)
-    while( indexOfMinNextX !== undefined) {
-      nextX = iterators[indexOfMinNextX].peekNextX()
+    if( nextX === undefined)
+      return target
+
+    s = -1
+    while( ++s < length) {
+      iterators[s].advanceToNextX( nextX)
+    }
+
+    xIndex = 0
+    while( nextX !== undefined) {
       s = -1
       while( ++s < length) {
-        target[s][index] = iterators[s].next( nextX)
+        target[s][xIndex] = iterators[s].next( nextX)
       }
-
-      indexOfMinNextX = seriesIndexOfMinNextX( iterators)
-      index++
+      nextX = smallestNextX( iterators)
+      xIndex++
     }
 
     return target;
@@ -3073,14 +3117,16 @@
   trait.layout.vertical = layoutVertical
   trait.layout.byOrientation = layoutByOrientation
   trait.layout.verticalAnchorLeftRight = layoutVerticalAnchorLeftRight
-  trait.layout.mapUniform = mapUniform,
+  trait.layout.mapUniform = mapUniform
   trait.layout.utils = {
     listNudgeUpFromBottom: listNudgeUpFromBottom,
     removeOverlapFromTop: removeOverlapFromTop,
     listBalanceFromTop: listBalanceFromTop,
     trendstack: {
       makeTargetSeries: makeTargetSeries,
-      seriesIndexOfMinNextX: seriesIndexOfMinNextX
+      seriesIndexOfMinNextX: seriesIndexOfMinNextX,
+      greatestNextX: greatestNextX,
+      smallestNextX: smallestNextX
       //populateVerticalSliceAndAdvanceCursor: populateVerticalSliceAndAdvanceCursor,
       //mapSeriesToUniformX: mapSeriesToUniformX
     }
@@ -3177,7 +3223,7 @@
     extents = data.map(function(s, i) {
       var series = access.series(s, i)
       var extent = [
-        d3.min( series, function( d) { return d.y0}),
+        d3.min( series, function( d, ii) { return d.y0 + access.data(d, ii)}),
         d3.max( series, function( d, ii) { return d.y0 + access.data(d, ii)})
       ]
       return extent
@@ -3188,9 +3234,9 @@
 
   /**
    *
-   * @param extents Array of extents for each series.
-   * @param defaultValue if no extents, use default if available.
-   * @returns Extent array.
+   * @param {array} extents Array of extents for each series.
+   * @param {array} defaultValue if no extents, use default if available.
+   * @returns {array} Extent array.
    */
   function extentFromExtents( extents, padding, defaultValue) {
     var min, max
@@ -3221,30 +3267,79 @@
    * @returns {boolean}
    */
   function isExtentExtended( currentExtent, newExtent) {
-    if( ! currentExtent || currentExtent.length < 2) {
+    if( newExtent === undefined) {
+      return false
+    } else if( currentExtent === undefined) {
       return true
     } else {
-      return newExtent[0] < currentExtent[0] ||
-        trait.utils.extentMax( newExtent) > trait.utils.extentMax( currentExtent)
+      var currentMin = currentExtent[0],
+          currentMax = trait.utils.extentMax( currentExtent),
+          newMin = newExtent[0],
+          newMax = trait.utils.extentMax( newExtent)
+      return (currentMin === undefined && newMin !== undefined) ||
+          (currentMax === undefined && newMax !== undefined ) ||
+          newMin < currentMin ||
+          newMax > currentMax
     }
   }
 
+  // TODO: Update to functional (i.e. remove side effect of updating parameter)
   function extendExtent( currentExtent, newExtent) {
-    if( ! newExtent || newExtent.length < 2)
+    if( newExtent === undefined || newExtent.length === 0)
       return currentExtent
 
-    if( ! currentExtent || currentExtent.length < 2)
+    if( currentExtent === undefined || currentExtent.length === 0)
       return newExtent
 
-    if( newExtent[0] < currentExtent[0]) {
-      currentExtent[0] = newExtent[0]
+    var currentMin = currentExtent[0],
+        currentMax = trait.utils.extentMax( currentExtent),
+        newMin = newExtent[0],
+        newMax = trait.utils.extentMax( newExtent)
+
+    if( currentMin === undefined || newMin < currentMin) {
+      currentExtent[0] = newMin
     }
-    if( trait.utils.extentMax( newExtent) > trait.utils.extentMax( currentExtent)) {
-      currentExtent[ currentExtent.length-1] = trait.utils.extentMax( newExtent)
+    if( currentMax === undefined || newMax > currentMax) {
+      var maxIndex = Math.max(1, currentExtent.length-1)
+      currentExtent[ maxIndex] = newMax
     }
     return currentExtent
   }
 
+
+  var log10  = typeof Math.log10 === 'function' ? Math.log10 : function(x) {return Math.log(x) * Math.LOG10E}
+
+  function roundToNearest(number, nearest){
+    var absoluteNearest = Math.abs(nearest),
+        nearestSameSign = number >= 0 ? absoluteNearest : - absoluteNearest
+    return nearestSameSign * Math.round(number/nearestSameSign)
+  }
+
+  /**
+   * Return extent with nice minimum.
+   * @param [[]} extent array
+   * @return {[]} extent nice extent
+   */
+  function niceExtent(extent) {
+    var niceFraction1To10, niceFractionOfExtent, niceMin,
+        min = trait.utils.extentMin( extent),
+        max = trait.utils.extentMax( extent)
+
+    if( min === 0 || max - min === 0)
+      return extent
+
+    var ext = (max - min) * 1.2, // padding of 0.2
+        exponent = Math.floor(log10(ext)),
+        fractionOf10 = ext / Math.pow(10,exponent) // between 1 and 10
+
+    niceFraction1To10 = fractionOf10 <= 0.9 ? 1
+        : fractionOf10 <= 1.7 ? 2
+        : fractionOf10 <= 4 ? 5
+        : 10
+    niceFractionOfExtent = niceFraction1To10 * Math.pow(10,exponent) / 10.0
+    niceMin = roundToNearest( min - niceFractionOfExtent, niceFractionOfExtent)
+    return [niceMin, max]
+  }
 
   if( !trait.utils )
     trait.utils = {}
@@ -3257,6 +3352,7 @@
   trait.utils.extentFromAreaData = extentFromAreaData
   trait.utils.isExtentExtended = isExtentExtended
   trait.utils.extendExtent = extendExtent
+  trait.utils.niceExtent = niceExtent
 
 }(d3, d3.trait));
 
@@ -3783,7 +3879,7 @@
     extentFromAreaDataAccess.series = access.actualValues
     extentFromAreaDataAccess.data = access.actualY
 
-    area = makeArea( stacked, access, x, y, interpolate, _super.chartHeight()),
+    area = makeArea( stacked, access, x, y, interpolate, _super.chartHeight())
 
 
     // Return simple array of series data.
@@ -3900,27 +3996,37 @@
      * @returns {Array}
      */
     chartArea[yExtendDomainKey] = function( domain, data) {
+      var extent,
+          methodName = 'chartArea.' + yExtendDomainKey
+
       domain = this._super( domain, data)
       yExtendDomainKeyCalled = true
 
-      if( debug) console.log( 'chartArea.' + yExtendDomainKey + ': begin')
-      if( ! stacked)
-        return domain
+      if( debug) console.log( methodName + ': begin')
 
       if( data)
         filteredData = seriesFilter( data)
-
       if( filteredData.length === 0)
         return domain
 
-      if( debug) console.log( 'chartArea.' + yExtendDomainKey + ': before processFilteredData')
-      processFilteredData( filteredData)
-      if( debug) console.log( 'chartArea.' + yExtendDomainKey + ': before stackLayout')
-      stackLayout( filteredData)
-      var extent = trait.utils.extentFromAreaData( filteredData, extentFromAreaDataAccess, domainPadding)
-      if( debug) console.log( 'chartArea.' + yExtendDomainKey + ': domain: ' + JSON.stringify(domain) + ' data extent: ' + JSON.stringify( extent))
-      trait.utils.extendExtent( domain, extent)
+      if( stacked) {
+        if( debug) console.log( methodName + ' stacked: before processFilteredData')
+        processFilteredData( filteredData)
+        if( debug) console.log( methodName + ' stacked : before stackLayout')
+        stackLayout( filteredData)
+        extent = trait.utils.extentFromAreaData( filteredData, extentFromAreaDataAccess, domainPadding)
+      } else {
+        if( debug) console.log( methodName + ' unstacked : before extentFromData')
+        extent = trait.utils.extentFromData(filteredData, access, 0, domain)
+      }
 
+      if( debug) console.log( methodName + ': domain: ' + JSON.stringify(domain) + ' data extent: ' + JSON.stringify( extent))
+
+      if( trait.utils.isExtentExtended( domain, extent)) {
+        domain = trait.utils.extendExtent( domain, extent)
+        if( debug)
+          console.log( methodName + ' updated domain:' + domain)
+      }
       return domain
     }
 
@@ -4041,16 +4147,17 @@
     }
 
     function getY( d, i) {
-      return y(Math.max(access.y(d,i),0))
+      return y(access.y(d,i))
     }
     function getYStacked( d, i) {
-      return y(d.y0)
+      var yValue = access.y(d,i)
+      return yValue >= 0 ? y(d.y0 + yValue) : y(d.y0)
     }
     function getHeight( d, i) {
       return y(0) - y( Math.abs(access.y(d,i)))
     }
     function getHeightStacked( d, i) {
-      return y(0) - y(d.size)
+      return Math.abs(y(d.y0) - y(d.y0 + access.y(d,i)))
     }
     // For pos/neg bars:
     // x - same
@@ -4091,8 +4198,8 @@
     if( !indicesExtent )
       return scale.range()
 
-    i = indicesExtent[0],
-      minValue = scale(accessor(data[i], i)) + offsetLeft
+    i = indicesExtent[0]
+    minValue = scale(accessor(data[i], i)) + offsetLeft
 
     i = indicesExtent[1]
     maxValue = scale(accessor(data[i], i)) + offsetRight
@@ -4224,7 +4331,8 @@
           negativeBase -= d.size
         } else
         {
-          d.y0 = positiveBase = positiveBase + d.size
+          d.y0 = positiveBase
+          positiveBase += d.size
         }
       }
     }
@@ -4232,7 +4340,7 @@
       d3.merge(
         d3.merge(
           data.map(function(e) {
-            return access.seriesData(e).map(function(f) { return [f.y0,f.y0-f.size] })
+            return access.seriesData(e).map(function(f) { return [f.y0,f.y0+f.size] })
           })
         )
       )
@@ -4386,24 +4494,33 @@
      * @returns {Array}
      */
     chartBar[yExtendDomainKey] = function( domain, data) {
+      var extent,
+          methodName = 'chartArea.' + yExtendDomainKey
       domain = this._super( domain, data)
-      if( debug)
-        console.log( 'chartBar[yExtendDomainKey] begin ********************************')
 
-      if( debug) console.log( 'chartBar.' + yExtendDomainKey + ': begin')
-      if( ! c.stacked)
-        return domain
+      if( debug) console.log( methodName + ': begin')
 
       if( data)
         filteredData = seriesFilter( data)
-
       if( filteredData.length === 0)
         return domain
 
-      if( debug) console.log( 'chartBar.' + yExtendDomainKey + ': before stackLayout')
-      stackLayoutPositiveAndNegativeValues( filteredData, access)
+      if( c.stacked) {
+        if( debug) console.log( methodName + ': before stackLayout')
+        stackLayoutPositiveAndNegativeValues( filteredData, access)
+        extent = filteredData.extent
+      }  else {
+        if( debug) console.log( methodName + ' unstacked : before extentFromData')
+        extent = trait.utils.extentFromData(filteredData, access, 0, domain)
+      }
 
-      return filteredData.extent
+      if( trait.utils.isExtentExtended( domain, extent)) {
+        domain = trait.utils.extendExtent( domain, extent)
+        if( debug)
+          console.log( methodName + ' updated domain:' + domain)
+      }
+
+      return domain
     }
 
     chartBar.update = function(type, duration) {
@@ -5915,12 +6032,12 @@ trait.chart.line = _chartLine
         var minMs = props.min.getTime(),
             maxMs = props.max.getTime()
         props.isDate = true
-        props.span = Math.abs( maxMs - minMs),
+        props.span = Math.abs( maxMs - minMs)
         props.spanEpsilon = props.span * 0.025
         props.isExtentMax = Math.abs( maxMs - lastDomainMax.getTime()) < props.spanEpsilon
       } else {
         props.isDate = false
-        props.span = Math.abs( props.max - props.min),
+        props.span = Math.abs( props.max - props.min)
         props.spanEpsilon = props.span * 0.025
         props.isExtentMax = Math.abs( props.max - lastDomainMax) < props.spanEpsilon
       }
@@ -7041,13 +7158,14 @@ trait.chart.line = _chartLine
   }
 
 
-  function layoutLabelsNoOverlap(data, access, getSeriesEndpoint, getY, chartRect, textHeight, padding) {
+  function layoutLabelsVerticalyWithNoOverlap(data, access, getSeriesEndpoint, getY, chartRect, textHeight, padding) {
 
     var allSeriesHaveData = true,
-        ends = data.map( function( s, i) { return getSeriesEndpoint(s, i)})
+        ends = data.map( function( s, i) { return getSeriesEndpoint(s, i)}),
+        centerTextYOffset = textHeight / 2
 
     function makeRect( d, i) {
-      return new trait.Rect( 0, getY(d, i), 0, textHeight + padding, 0, 1) // 1 anchor on bottom.
+      return new trait.Rect( 0, getY(d, i) + centerTextYOffset, 0, textHeight + padding, 0, 1) // 1 anchor on bottom.
     }
     function getDsWithRect( lastOrFirst) {
       if( lastOrFirst.d !== undefined) {
@@ -7116,7 +7234,7 @@ trait.chart.line = _chartLine
 
     function getSeriesEndpoint( data, si) {
       var di,
-          seriesData = access.seriesData( data, si)
+          seriesData = trait.murts.utils.getOrElse( access.seriesData(data, si), x1)
       switch( c.orient) {
         case 'left': di = 0; break;
         case 'right': di = seriesData.length - 1; break;
@@ -7132,8 +7250,19 @@ trait.chart.line = _chartLine
       return yPositive + (height / 2.0)
     }
     function getCenterYStacked( d, di) {
-      var halfHeight = (y(0) - y(d.size)) / 2.0
-      return y(d.y0) + halfHeight
+      var halfVisibleHeight,
+          domainMinY = d3.trait.utils.extentMin(y.domain()),
+          yValue = access.y(d, di),
+          yOffset = domainMinY - d.y0
+      if( yOffset <= 0) {
+        // bottom of area or bar is visible
+        halfVisibleHeight = yValue / 2.0
+        return y(halfVisibleHeight + d.y0, di)
+      } else {
+        // bottom of area or bar is NOT visible
+        halfVisibleHeight = (yValue - yOffset) / 2.0
+        return y(halfVisibleHeight + domainMinY, di)
+      }
     }
 
     var getY = c.stacked ? getCenterYStacked : getCenterY
@@ -7207,7 +7336,7 @@ trait.chart.line = _chartLine
           group = this._container.append('g').classed(classes, true);
         }
 
-        layoutLabelsNoOverlap( filteredData, access, getSeriesEndpoint, getY, self.chartRect(), 10, 2)
+        layoutLabelsVerticalyWithNoOverlap( filteredData, access, getSeriesEndpoint, getY, self.chartRect(), 14, 2)
 
         // DATA JOIN
         series = group.selectAll(".series")
@@ -7252,7 +7381,7 @@ trait.chart.line = _chartLine
       this._super(type, duration)
       var self = labelSide
 
-      layoutLabelsNoOverlap( filteredData, access, getSeriesEndpoint, getY, self.chartRect(), 10, 2)
+      layoutLabelsVerticalyWithNoOverlap( filteredData, access, getSeriesEndpoint, getY, self.chartRect(), 10, 2)
       var attr = getAttrs( self.chartWidth(), self.marginLeft(), c)
 
       // DATA JOIN
@@ -7288,12 +7417,12 @@ trait.chart.line = _chartLine
       // UPDATE
       // Select will apply data to the text element (selectAll does not).
       series.select('text.value')
-        .attr("x", self.chartWidth() + self.marginLeft() + 5)
+        .attr("x", attr.value.x)
         .attr("y", getSeriesEndRectY)
         .text(getSeriesEndY)
 
       series.select('text.label')
-        .attr("x", self.chartWidth() + self.marginLeft() + 15)
+        .attr("x", attr.label.x)
         .attr("y", getSeriesEndRectY)
         .text(_config.seriesLabel) // I suppose the label could change.
 
@@ -7858,7 +7987,7 @@ trait.chart.line = _chartLine
 
     function uniformIterator( _data) {
       data = _data
-      current = {x: undefined, y: 0}
+      current = {x: undefined, y: undefined}
 
       if( !data.length) {
         index = undefined
@@ -7873,8 +8002,21 @@ trait.chart.line = _chartLine
       return uniformIterator
     }
 
+    function advance() {
+      if( nextX !== undefined) {
+        index++              // have a nextX, so next index is valid.
+        current.y = y.call( uniformIterator, data[index], index)
+        current.x = nextX
+        nextX = index + 1 < data.length ? x.call( uniformIterator,  data[index + 1], index + 1) : undefined
+      }
+    }
+
     uniformIterator.isNext = function( ) {
       return nextX !== undefined
+    }
+
+    uniformIterator.empty = function( ) {
+      return data.length === 0
     }
 
     /**
@@ -7887,7 +8029,7 @@ trait.chart.line = _chartLine
     }
 
     uniformIterator.next = function( xMin) {
-      var d, point, outPoint
+      var point, outPoint
 
       // cursor. index      nextX
       //         ---------  ---------
@@ -7897,27 +8039,60 @@ trait.chart.line = _chartLine
       //         undefined  undefined     Series is empty
 
       if( nextX !== undefined) {
-        if( nextX.valueOf() <= xMin.valueOf() + epsilon) {
-          // Advance and use value
-          index++              // have a nextX, so next index is valid.
-          d = data[index]
-          current.y = y.call( uniformIterator, d, index)
-          current.x = nextX
-          nextX = index + 1 < data.length ? x.call( uniformIterator,  data[index + 1], index + 1) : undefined
-          point = [current.x, current.y]
-        } else {
-          // nextX is too far away from xMin. Use xMin and interpolate y. Don't advance index.
-          point = [xMin, current.y]  // TODO: Assuming interpolate: 'step-after'. Add others later.
+        while( nextX !== undefined && nextX.valueOf() <= xMin.valueOf() + epsilon) {
+          advance()
         }
+        if( Math.abs(current.x.valueOf() - xMin.valueOf()) < epsilon)
+          point = [current.x, current.y]
+        else
+          point = [xMin, current.y]  // TODO: Assuming interpolate: 'step-after'. Add others later.
+
+        // if( nextX.valueOf() <= xMin.valueOf() + epsilon) {
+        //   advance()
+        //   point = [current.x, current.y]
+        // } else {
+        //   // nextX is too far away from xMin. Use xMin and interpolate y. Don't advance index.
+        //   point = [xMin, current.y]  // TODO: Assuming interpolate: 'step-after'. Add others later.
+        // }
       } else {
         // no next. Use xMin and interpolate y.
         point = [xMin, current.y]  // TODO: Assuming interpolate: 'step-after'. Add others later.
       }
 
       outPoint = {}
-      point = out.call( uniformIterator, outPoint, point[0], point[1])
+      out.call( uniformIterator, outPoint, point[0], point[1])
 
       return outPoint
+    }
+
+
+    /**
+     * Advance the iterator so a call to next(xValue) will return the specified xValue.
+     * @param {*} xValue Date or number
+     * @returns {boolean}
+     */
+    uniformIterator.advanceToNextX = function( xValue) {
+      if( xValue === undefined)
+        return false
+
+      var xValueMinusEpsilon = xValue.valueOf() - epsilon
+
+      // cursor. index      nextX
+      //         ---------  ---------
+      //         -1         number        Start of series
+      //         >=0        number        Middle of series.
+      //         >=0        undefined     At end of series or past end of series.
+      //         undefined  undefined     Series is empty
+
+      if( data.length === 0)
+        return false
+
+      // advance until nextX is past xMin, so current.x is at xMin
+      while( nextX !== undefined && nextX < xValueMinusEpsilon) {
+        advance()
+      }
+
+      return true
     }
 
 
@@ -8306,6 +8481,9 @@ trait.chart.line = _chartLine
 
 (function(d3, trait) {
 
+  trait.scale.EXTEND_DOMAIN = 'ExtendDomain'
+  trait.scale.NICE = 'nice'
+
   var debug = false
 
   var extentMax = trait.utils.extentMax,
@@ -8326,7 +8504,8 @@ trait.chart.line = _chartLine
     MAX: 2,     // Only domain max is specified in config.
     DOMAIN: 3,  // Domain min and max are specified in config.
     TREND: 4,   // This is a trend chart that scrolls horizontally based on tracking configuration.
-    MANUAL: 5   // Domain is only updated via call to <axis>Domain().  Example: chart.y1Domain( [-1,2])
+    MANUAL: 5,  // Domain is only updated via call to <axis>Domain().  Example: chart.y1Domain( [-1,2])
+    NICE: 6     // DATA with nice minimum
   }
   var DOMAIN_CONFIG_NAMES = []
   DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.DATA] = 'DATA'
@@ -8335,6 +8514,7 @@ trait.chart.line = _chartLine
   DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.DOMAIN] = 'DOMAIN'
   DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.TREND] = 'TREND'
   DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.MANUAL] = 'MANUAL'
+  DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.NICE] = 'NICE'
 
   var timeIntervals = [
     d3.time.second,
@@ -8397,10 +8577,23 @@ trait.chart.line = _chartLine
           dc.max = dMax
         } else {
           dc.type = DOMAIN_CONFIG.DATA
-          console.error( 'makeDomainConfig: Unrecognized domain specification: ' + JSON.stringify( config.domain))
+          console.error( 'makeDomainConfig: Unrecognized domain specification object: ' + JSON.stringify( config.domain))
         }
-      } else if( config.domain === 'manual' || config.domain === 'MANUAL') {
-        dc.type = DOMAIN_CONFIG.MANUAL
+
+        // nice recalculates min, so DOMAIN_CONFIG.MIN is incompatible with nice
+        dc.nice = dc.type !== DOMAIN_CONFIG.MIN && config.domain.hasOwnProperty('nice') && (config.domain.nice === true || config.domain.nice.toLowerCase() === 'true')
+
+      } else if( typeof config.domain === 'string') {
+        var upperCase = config.domain.toUpperCase()
+        if( upperCase === DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.MANUAL]) {
+          dc.type = DOMAIN_CONFIG.MANUAL
+        } else if( upperCase === DOMAIN_CONFIG_NAMES[DOMAIN_CONFIG.NICE]) {
+          dc.type = DOMAIN_CONFIG.DATA
+          dc.nice = true
+        } else {
+          console.error( 'makeDomainConfig: Unrecognized domain specification string: ' + JSON.stringify( config.domain))
+          dc.type = DOMAIN_CONFIG.DATA
+        }
       } else
         dc.type = DOMAIN_CONFIG.DATA
       // TODO: Could also specify domain config as a function
@@ -8412,6 +8605,18 @@ trait.chart.line = _chartLine
     return dc
   }
 
+  function scaleDefined( scale) {
+    var min, max,
+        scaleDomain = scale.domain()
+    if( scaleDomain.length === 0)
+      return false
+    else {
+      min = scaleDomain[0]
+      max = trait.utils.extentMax( scaleDomain)
+      // checks for null, undefined, NaN
+      return typeof min === 'number' && !isNaN(min) && typeof max === 'number' && !isNaN(max)
+    }
+  }
 
   /**
    * Return an object with interval and count or null
@@ -8494,46 +8699,27 @@ trait.chart.line = _chartLine
   }
 
   /**
-   *
+   * Get a default domain based on configuration information (unless it's a trend).
    * @param domainConfig Config object with domain, interval, tracking
    * @param data The chart data
    * @param access object containing series, data
-   * @returns {*}
+   * @returns {array} An array which may be [undefined, undefined]
    */
-  function getDomain( domainConfig, data, access) {
-    //var min, max, dataDomain
+  function getDomainFromConfig( domainConfig, data, access) {
+    var domain = []
 
-    //// if domainConfig.domain is specified, it trumps other configs
-    //if( domainConfig.type === DOMAIN_CONFIG.DOMAIN)
-    //  return domainConfig.domain
-
-    //// TODO: This overrides trend. The two should work together somehow.
-    //if( domainConfig.minDomainFromData) {
-    //  if( trait.utils.isExtentExtended( domain, domainConfig.minDomainFromData))
-    //    domain = trait.utils.extendExtent( domain, domainConfig.minDomainFromData)
-    //  return domain
-    //}
-
-    var domain = [0,1]
-
+    domain[0] = undefined
+    domain[1] = undefined
     data = trait.murts.utils.getOrElse( data)
 
     switch( domainConfig.type) {
       case DOMAIN_CONFIG.DOMAIN: domain = domainConfig.domain; break;
       case DOMAIN_CONFIG.TREND: domain = getDomainTrend(domainConfig, data, access, domainConfig.padding); break;
-      case DOMAIN_CONFIG.MIN: domain = [domainConfig.min, trait.utils.maxFromData(data, access)]; break;
-      case DOMAIN_CONFIG.MAX: domain = [trait.utils.minFromData(data, access), domainConfig.max]; break;
-      case DOMAIN_CONFIG.DATA: domain = trait.utils.extentFromData(data, access, domainConfig.padding); break;
-      default: console.error( "scale getDomain - Unknown domainConfig.type: " + domainConfig.type)
+      case DOMAIN_CONFIG.MIN: domain[0] = domainConfig.min; break;
+      case DOMAIN_CONFIG.MAX: domain[1] = domainConfig.max; break;
+      case DOMAIN_CONFIG.DATA: break;
+      default: console.error( "scale getDomainFromConfig - Unknown domainConfig.type: " + domainConfig.type)
     }
-    //if( domainConfig.trend )
-    //  domain = getDomainTrend(domainConfig, data, access, domainConfig.padding)
-    //else if( domainConfig.min != null )
-    //  domain = [domainConfig.min, trait.utils.maxFromData(data, access)]
-    //else if( domainConfig.max != null )
-    //  domain = [trait.utils.minFromData(data, access), domainConfig.max]
-    //else
-    //  domain = trait.utils.extentFromData(data, access, domainConfig.padding)
 
     return domain
   }
@@ -8556,7 +8742,7 @@ trait.chart.line = _chartLine
 // 8. save oldMax and domainTranslateLast
 //
   function updateScale(scale, scaleName, range, externalScaleSet, extendDomainFn, listeners, domainConfig, data, access) {
-    var min, max, dataDomain, oldDomain, oldMax, newRangeMax
+    var min, max, domain, oldDomain, oldMax, newRangeMax
 
     // if domainConfig.domain is specified, it trumps other configs
     if( domainConfig.type === DOMAIN_CONFIG.MANUAL )
@@ -8602,41 +8788,42 @@ trait.chart.line = _chartLine
           scale.range([range[0], newRangeMax])
 
         } else {
-          dataDomain = trait.utils.extentFromData(data, access, domainConfig.padding)
-          scale.domain(dataDomain)
+          domain = trait.utils.extentFromData(data, access, domainConfig.padding)
+          scale.domain(domain)
         }
       }
 
     } else {
-      dataDomain = getDomain( domainConfig, data, access)
+      domain = getDomainFromConfig( domainConfig, data, access)
       if( debug)
-        console.log( 'updateScale ' + scaleName + ': domainConfig.type: ' + DOMAIN_CONFIG_NAMES[domainConfig.type] + ' domain: ' + JSON.stringify( dataDomain))
+        console.log( 'updateScale ' + scaleName + ': domainConfig.type: ' + DOMAIN_CONFIG_NAMES[domainConfig.type] + ' domain: ' + JSON.stringify( domain))
 
-      var extendedDomain = extendDomainFn( [dataDomain[0], extentMax(dataDomain)])
-      if( isExtentExtended( dataDomain, extendedDomain)) {
-        extendExtent( dataDomain, extendedDomain)
-        scale.domain( dataDomain)
+      var extendedDomain = extendDomainFn( [domain[0], extentMax(domain)])
+      if( isExtentExtended( domain, extendedDomain)) {
+        extendExtent( domain, extendedDomain)
         if( debug)
-          console.log( 'updateScale' + scaleName + ': child trait extended domain: ' + JSON.stringify( dataDomain))
+          console.log( 'updateScale' + scaleName + ': child trait extended domain: ' + JSON.stringify( domain))
       }
 
+      if( domainConfig.nice)
+        domain = trait.utils.niceExtent( domain);
 
       if( externalScaleSet.length) {
-        var unionDomain = domainFromExternalScaleSet.call( this, externalScaleSet, dataDomain)
-        if( isExtentExtended( dataDomain, unionDomain)) {
-          extendExtent( dataDomain, unionDomain)
+        var unionDomain = domainFromExternalScaleSet.call( this, externalScaleSet, domain)
+        if( isExtentExtended( domain, unionDomain)) {
+          extendExtent( domain, unionDomain)
           if( debug)
-            console.log( 'updateScale' + scaleName + ' union updated domain:' + dataDomain)
+            console.log( 'updateScale' + scaleName + ' union updated domain:' + domain)
         }
       }
 
-      constrainDomainMinOrMax( dataDomain, domainConfig)
+      constrainDomainMinOrMax( domain, domainConfig)
 
       if( debug)
-        console.log( 'updateScale' + scaleName + ': setting domain: ' + JSON.stringify( dataDomain))
-      scale.domain(dataDomain)
+        console.log( 'updateScale' + scaleName + ': setting domain: ' + JSON.stringify( domain))
+      scale.domain(domain)
 
-      if( listeners.length && ( dataDomain[0] !== oldDomain[0] || extentMax( dataDomain) !== extentMax( oldDomain)) )
+      if( listeners.length && ( domain[0] !== oldDomain[0] || extentMax( domain) !== extentMax( oldDomain)) )
         notifyListeners.call( this, listeners, scale)
     }
 
@@ -8667,7 +8854,7 @@ trait.chart.line = _chartLine
         axes = trait.config.axes( _config),
         //access = trait.config.accessorsXY( _config, axes),
         domainConfig = makeDomainConfig(_config),
-        extendDomainKey = scaleName + 'ExtendDomain',
+        extendDomainKey = scaleName + trait.scale.EXTEND_DOMAIN,
         externalScaleSet = [], // scales we're doing a union with
         listeners = []
 
@@ -8753,7 +8940,7 @@ trait.chart.line = _chartLine
         scale = d3.time.scale(),
         access = makeAccessorsFromConfig(_config, scaleName, scale),
         domainConfig = makeDomainConfig(_config),
-        extendDomainKey = scaleName + 'ExtendDomain',
+        extendDomainKey = scaleName + trait.scale.EXTEND_DOMAIN,
         addListenerKey = scaleName + 'AddListener',
         removeListenerKey = scaleName + 'RemoveListener',
         updateUnionKey = scaleName + 'UpdateUnion',
@@ -8787,23 +8974,28 @@ trait.chart.line = _chartLine
           var domain, extendedDomain,
               oldDomain = scale.domain()
 
-          domain = getDomain( domainConfig, filteredData, access)
-          scale.domain( domain)
-
-          if( debug)
-            console.log( 'scaleTime.each ' + scaleName + ' range:' + range + ' domain:' + domain)
+          domain = getDomainFromConfig( domainConfig, filteredData, access)
 
           // TODO: nice overlaps wth interval. Maybe it's one or the other?
-          if( _config.nice )
-            scale.nice(_config.nice) // start and end on month. Ex Jan 1 00:00 to Feb 1 00:00
 
           extendedDomain = scaleTime[extendDomainKey]( domain, _data)
           if( extendedDomain !== domain) {
             domain = extendedDomain
-            scale.domain( domain)
             if( debug)
               console.log( 'scaleTime.each ' + extendDomainKey + ' updated domain:' + domain)
           }
+          if( domain[0] === undefined && extentMax(domain) === undefined)
+            domain = trait.utils.extentFromData(filteredData, access, domainConfig.padding)
+          else if( domain[0] === undefined)
+            domain = [trait.utils.minFromData(filteredData, access), extentMax(domain)]
+          else if( extentMax(domain) === undefined)
+            domain = [domain[0], trait.utils.maxFromData(filteredData, access)]
+          scale.domain( domain)
+          if( _config.nice )
+            scale.nice(_config.nice) // start and end on month. Ex Jan 1 00:00 to Feb 1 00:00
+
+          if( debug)
+            console.log( 'scaleTime.each ' + scaleName + ' range:' + range + ' domain:' + domain)
 
           if( listeners.length && ( domain[0] !== oldDomain[0] || extentMax( domain) !== extentMax( oldDomain)) )
             notifyListeners.call( this, listeners, scale)
@@ -8936,7 +9128,7 @@ trait.chart.line = _chartLine
         scale = d3.scale.linear(),
         access = makeAccessorsFromConfig(_config, scaleName, scale),
         domainConfig = makeDomainConfig(_config),
-        extendDomainKey = scaleName + 'ExtendDomain',
+        extendDomainKey = scaleName + trait.scale.EXTEND_DOMAIN,
         addListenerKey = scaleName + 'AddListener',
         removeListenerKey = scaleName + 'RemoveListener',
         updateUnionKey = scaleName + 'UpdateUnion',
@@ -8966,20 +9158,30 @@ trait.chart.line = _chartLine
           var domain, extendedDomain, unionDomain,
               oldDomain = scale.domain()
 
-          domain = getDomain( domainConfig, filteredData, access)
-          scale.domain( domain)
+          domain = getDomainFromConfig( domainConfig, filteredData, access)
 
           if( debug)
             console.log( 'scaleLinear.each ' + scaleName + ' range:' + range + ' domain:' + domain)
 
-          extendedDomain = scaleLinear[extendDomainKey]( [domain[0], extentMax(domain)], _data)
+          extendedDomain = scaleLinear[extendDomainKey]( [domain[0], extentMax(domain)], filteredData)
           if( isExtentExtended( domain, extendedDomain)) {
             extendExtent( domain, extendedDomain)
             constrainDomainMinOrMax( domain, domainConfig)
-            scale.domain( domain)
             if( debug)
               console.log( 'scaleLinear.each ' + extendDomainKey + ' updated domain:' + domain)
           }
+          if( domain[0] === undefined && extentMax(domain) === undefined)
+            domain = trait.utils.extentFromData(filteredData, access, domainConfig.padding)
+          else if( domain[0] === undefined)
+            domain = [trait.utils.minFromData(filteredData, access), extentMax(domain)]
+          else if( extentMax(domain) === undefined)
+            domain = [domain[0], trait.utils.maxFromData(filteredData, access)]
+
+          if( domainConfig.nice)
+            domain = trait.utils.niceExtent( domain);
+
+          // Finally, set the scale!
+          scale.domain( domain)
 
           if( externalScaleSet.length) {
             unionDomain = domainFromExternalScaleSet.call( this, externalScaleSet, domain)
@@ -8991,7 +9193,6 @@ trait.chart.line = _chartLine
                 console.log( 'scaleLinear.each ' + scaleName + ' union updated domain:' + domain)
             }
           }
-
 
           if( listeners.length && ( domain[0] !== oldDomain[0] || extentMax( domain) !== extentMax( oldDomain)) )
             notifyListeners.call( this, listeners, scale)
@@ -9012,6 +9213,13 @@ trait.chart.line = _chartLine
       scale.domain(newDomain)
       // TODO: domain updated event?
     }
+
+    /**
+     * Override to extend the domain with local chart knowledge
+     * @param {array} domain Array with two elements. One or both elements could be undefined.
+     * @param {array} data
+     * @returns {*}
+     */
     scaleLinear[extendDomainKey] = function( domain, data) {
       return domain
     }
@@ -9031,14 +9239,17 @@ trait.chart.line = _chartLine
       var i = externalScaleSet.indexOf( scale)
       if( i < 0)
         externalScaleSet[externalScaleSet.length] = scale
-      scaleLinear.update( scaleName, 0)
+      var scaleDomain = scale.domain()
+      if(scaleDefined(scale))
+        scaleLinear.update( scaleName, 0)
       return this
     }
     scaleLinear[removeUnionKey] = function( scale) {
       var i = externalScaleSet.indexOf( scale)
       if( i >= 0)
         externalScaleSet.splice(i,1)
-      scaleLinear.update( scaleName, 0)
+      if(scaleDefined(scale))
+        scaleLinear.update( scaleName, 0)
       return this
     }
     scaleLinear[scaleName + 'MinDomainExtent'] = function(minDomain) {
